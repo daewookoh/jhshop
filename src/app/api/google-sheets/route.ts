@@ -12,6 +12,7 @@ interface Product {
   id: string
   name: string
   is_active: boolean
+  sale_date?: string
 }
 
 interface RequestPayload {
@@ -150,23 +151,68 @@ export async function POST(request: NextRequest) {
     // 새로 생성된 시트의 ID 가져오기
     const newSheetId = addSheetResponse.data.replies?.[0]?.addSheet?.properties?.sheetId || 0
     
-    // 상품 목록을 가나다 순으로 정렬
-    const sortProductsByName = (products: Product[]): Product[] => {
+    // 상품 목록을 판매일 역순, 상시는 마지막, 같은 판매일은 가나다순으로 정렬
+    const sortProductsBySaleDate = (products: Product[]): Product[] => {
       return products
         .filter(p => p.is_active)
-        .sort((a, b) => a.name.localeCompare(b.name, 'ko-KR'))
+        .sort((a, b) => {
+          // sale_date가 없거나 빈 문자열이거나 유효하지 않은 날짜인 경우 상시로 처리
+          const isValidDate = (dateStr: string | undefined) => {
+            if (!dateStr || dateStr.trim() === '') return false
+            const date = new Date(dateStr)
+            return !isNaN(date.getTime())
+          }
+          
+          const aIsValid = isValidDate(a.sale_date)
+          const bIsValid = isValidDate(b.sale_date)
+          
+          // 상시 상품(sale_date가 유효하지 않은 경우)은 맨 마지막
+          if (!aIsValid && !bIsValid) {
+            return a.name.localeCompare(b.name, 'ko-KR')
+          }
+          if (!aIsValid) return 1
+          if (!bIsValid) return -1
+          
+          // 판매일이 있는 경우 판매일 역순으로 정렬
+          const dateA = new Date(a.sale_date!)
+          const dateB = new Date(b.sale_date!)
+          
+          if (dateA.getTime() !== dateB.getTime()) {
+            return dateB.getTime() - dateA.getTime() // 역순
+          }
+          
+          // 같은 판매일인 경우 가나다순
+          return a.name.localeCompare(b.name, 'ko-KR')
+        })
     }
     
-    // 헤더 행 생성
-    const createHeaderRow = (products: Product[]): string[] => {
-      const sortedProducts = sortProductsByName(products)
+    // 헤더 행 생성 (3줄 구조)
+    const createHeaderRows = (products: Product[]): string[][] => {
+      const sortedProducts = sortProductsBySaleDate(products)
+      
+      // 첫번째 줄: 상품명
       const productNames = sortedProducts.map(p => p.name.replace(/\n/g, ' '))
-      return ['주문자', '원본주문', '비고', ...productNames]
+      const firstRow = ['주문자', '원본주문', '비고', ...productNames]
+      
+      // 두번째 줄: 판매일
+      const saleDates = sortedProducts.map(p => {
+        // sale_date가 없거나 빈 문자열이면 '상시'로 표시
+        if (!p.sale_date || p.sale_date.trim() === '') {
+          return '상시'
+        }
+        return p.sale_date
+      })
+      const secondRow = ['', '', '', ...saleDates]
+      
+      // 세번째 줄: 재고 (3A 셀에 "재고" 제목 추가)
+      const thirdRow = ['재고', '', '', ...new Array(productNames.length).fill('')]
+      
+      return [firstRow, secondRow, thirdRow]
     }
     
     // 주문 데이터를 스프레드시트 형식으로 변환
     const formatOrderData = (orders: OrderData[], products: Product[]): string[][] => {
-      const sortedProducts = sortProductsByName(products)
+      const sortedProducts = sortProductsBySaleDate(products)
       
       // 닉네임별로 그룹화
       const groupedOrders = orders.reduce((acc, order) => {
@@ -208,14 +254,14 @@ export async function POST(request: NextRequest) {
       return rows
     }
     
-    // 헤더 행 생성
-    const headerRow = createHeaderRow(products)
+    // 헤더 행들 생성 (3줄)
+    const headerRows = createHeaderRows(products)
     
     // 주문 데이터 포맷팅
     const orderRows = formatOrderData(orders, products)
     
     // 모든 데이터를 스프레드시트에 작성
-    const allData = [headerRow, ...orderRows]
+    const allData = [...headerRows, ...orderRows]
     
     // 데이터 작성
     await sheets.spreadsheets.values.update({
@@ -249,13 +295,36 @@ export async function POST(request: NextRequest) {
       }
     })
     
-    // 2. 첫 번째 줄(헤더) 가운데 정렬
+    // 2. 첫 번째 줄(상품명 헤더) 가운데 정렬
     formatRequests.push({
       repeatCell: {
         range: {
           sheetId: newSheetId,
           startRowIndex: 0,
           endRowIndex: 1,
+          startColumnIndex: 0,
+          endColumnIndex: allData[0].length
+        },
+        cell: {
+          userEnteredFormat: {
+            horizontalAlignment: 'CENTER',
+            verticalAlignment: 'MIDDLE',
+            textFormat: {
+              bold: true
+            }
+          }
+        },
+        fields: 'userEnteredFormat.horizontalAlignment,userEnteredFormat.verticalAlignment,userEnteredFormat.textFormat.bold'
+      }
+    })
+    
+    // 3. 두 번째 줄(판매일 헤더) 가운데 정렬
+    formatRequests.push({
+      repeatCell: {
+        range: {
+          sheetId: newSheetId,
+          startRowIndex: 1,
+          endRowIndex: 2,
           startColumnIndex: 0,
           endColumnIndex: allData[0].length
         },
@@ -320,9 +389,18 @@ export async function POST(request: NextRequest) {
       }
     })
     
-    // 6. 상품 컬럼들의 너비 설정
+    // 6. 상품 컬럼들의 너비를 텍스트 길이에 맞춰 동적 설정
     const productColumns = allData[0].length - 3 // 헤더에서 주문자, 원본주문, 비고 제외
+    const sortedProducts = sortProductsBySaleDate(products)
+    
     for (let i = 0; i < productColumns; i++) {
+      const productName = sortedProducts[i]?.name || ''
+      // 한글 텍스트 길이를 고려한 너비 계산 (한글 1자당 약 14px, 영문 1자당 약 8px)
+      const textLength = productName.length
+      const koreanChars = (productName.match(/[가-힣]/g) || []).length
+      const otherChars = textLength - koreanChars
+      const calculatedWidth = Math.max(80, (koreanChars * 14) + (otherChars * 8) + 20) // 최소 80px, 여백 20px
+      
       formatRequests.push({
         updateDimensionProperties: {
           range: {
@@ -332,7 +410,7 @@ export async function POST(request: NextRequest) {
             endIndex: 4 + i
           },
           properties: {
-            pixelSize: 100 // 상품 컬럼을 100px로 설정
+            pixelSize: Math.min(calculatedWidth, 300) // 최대 300px로 제한
           },
           fields: 'pixelSize'
         }
@@ -349,15 +427,15 @@ export async function POST(request: NextRequest) {
       }
     })
     
-    // 8. 모든 컬럼의 너비를 자동 조정
-    formatRequests.push({
-      autoResizeDimensions: {
-        dimensions: {
-          sheetId: newSheetId,
-          dimension: 'COLUMNS'
-        }
-      }
-    })
+    // 8. 모든 컬럼의 너비를 자동 조정 (동적 너비 설정 후에는 제거)
+    // formatRequests.push({
+    //   autoResizeDimensions: {
+    //     dimensions: {
+    //       sheetId: newSheetId,
+    //       dimension: 'COLUMNS'
+    //     }
+    //   }
+    // })
     
     // 서식 적용
     if (formatRequests.length > 0) {
@@ -372,11 +450,11 @@ export async function POST(request: NextRequest) {
     // 셀 병합 (같은 닉네임의 첫 번째 칸)
     const mergeRequests = []
     let currentNickname = ''
-    let startRow = 2 // 헤더 다음부터 시작
+    let startRow = 4 // 헤더 3줄 다음부터 시작
     
     orderRows.forEach((row, index) => {
       const nickname = row[0]
-      const actualRow = index + 2 // 실제 행 번호 (헤더 포함)
+      const actualRow = index + 4 // 실제 행 번호 (헤더 3줄 포함)
       
       if (nickname && nickname !== currentNickname) {
         // 이전 닉네임의 셀 병합
@@ -402,7 +480,7 @@ export async function POST(request: NextRequest) {
     
     // 마지막 닉네임의 셀 병합
     if (currentNickname && orderRows.length > 0) {
-      const lastRow = orderRows.length + 1
+      const lastRow = orderRows.length + 4 // 헤더 3줄 + 데이터
       if (lastRow > startRow) {
         mergeRequests.push({
           mergeCells: {

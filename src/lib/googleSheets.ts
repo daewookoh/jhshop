@@ -10,6 +10,7 @@ interface Product {
   id: string;
   name: string;
   is_active: boolean;
+  sale_date?: string;
 }
 
 // Next.js API 호출 헬퍼
@@ -54,65 +55,7 @@ export const createNewSheet = async (date: string): Promise<string> => {
   }
 };
 
-// 상품 목록을 가나다 순으로 정렬
-const sortProductsByName = (products: Product[]): Product[] => {
-  return products
-    .filter(p => p.is_active)
-    .sort((a, b) => a.name.localeCompare(b.name, 'ko-KR'));
-};
-
-// 헤더 행 생성
-const createHeaderRow = (products: Product[]): string[] => {
-  const sortedProducts = sortProductsByName(products);
-  const productNames = sortedProducts.map(p => p.name.replace(/\n/g, ' '));
-  
-  return ['주문자', '원본주문', '비고', ...productNames];
-};
-
-// 주문 데이터를 스프레드시트 형식으로 변환
-const formatOrderData = (orders: OrderData[], products: Product[]): string[][] => {
-  const sortedProducts = sortProductsByName(products);
-  const productMap = new Map(sortedProducts.map(p => [p.name, p.id]));
-  
-  // 닉네임별로 그룹화
-  const groupedOrders = orders.reduce((acc, order) => {
-    if (!acc[order.nickname]) {
-      acc[order.nickname] = [];
-    }
-    acc[order.nickname].push(order);
-    return acc;
-  }, {} as Record<string, OrderData[]>);
-  
-  const rows: string[][] = [];
-  
-  Object.entries(groupedOrders).forEach(([nickname, orderList]) => {
-    orderList.forEach((order, index) => {
-      const row: string[] = [];
-      
-      // 첫 번째 행이면 닉네임 표시, 아니면 빈 문자열
-      if (index === 0) {
-        row.push(nickname);
-      } else {
-        row.push('');
-      }
-      
-      // 원본주문
-      row.push(order.orderText);
-      
-      // 비고
-      row.push(order.notes || '');
-      
-      // 상품별 주문 수량 (현재는 빈 문자열로 설정, 나중에 AI 분석 결과에 따라 채울 수 있음)
-      sortedProducts.forEach(() => {
-        row.push('');
-      });
-      
-      rows.push(row);
-    });
-  });
-  
-  return rows;
-};
+// 클라이언트에서는 데이터 처리 로직을 제거하고 API 호출만 담당
 
 // 스프레드시트에 데이터 작성
 export const writeOrdersToSheet = async (
