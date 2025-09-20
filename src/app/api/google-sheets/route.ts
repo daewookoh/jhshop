@@ -361,6 +361,55 @@ export async function POST(request: NextRequest) {
       }
     })
     
+    // 4. 세 번째 줄(판매가 헤더) 가운데 정렬
+    formatRequests.push({
+      repeatCell: {
+        range: {
+          sheetId: newSheetId,
+          startRowIndex: 2,
+          endRowIndex: 3,
+          startColumnIndex: 0,
+          endColumnIndex: allData[0].length
+        },
+        cell: {
+          userEnteredFormat: {
+            horizontalAlignment: 'CENTER',
+            verticalAlignment: 'MIDDLE',
+            textFormat: {
+              bold: true
+            }
+          }
+        },
+        fields: 'userEnteredFormat.horizontalAlignment,userEnteredFormat.verticalAlignment,userEnteredFormat.textFormat.bold'
+      }
+    })
+    
+    // 5. 판매가 컬럼들(세 번째 줄의 상품 가격) 우측정렬 및 숫자 형식
+    for (let i = 0; i < productColumns; i++) {
+      formatRequests.push({
+        repeatCell: {
+          range: {
+            sheetId: newSheetId,
+            startRowIndex: 2,
+            endRowIndex: 3,
+            startColumnIndex: 3 + i,
+            endColumnIndex: 4 + i
+          },
+          cell: {
+            userEnteredFormat: {
+              horizontalAlignment: 'RIGHT',
+              verticalAlignment: 'MIDDLE',
+              numberFormat: {
+                type: 'NUMBER',
+                pattern: '#,##0'
+              }
+            }
+          },
+          fields: 'userEnteredFormat.horizontalAlignment,userEnteredFormat.verticalAlignment,userEnteredFormat.numberFormat'
+        }
+      })
+    }
+    
     // 3. 원본주문 컬럼(두 번째 컬럼)의 너비를 넓게 설정
     formatRequests.push({
       updateDimensionProperties: {
@@ -446,7 +495,20 @@ export async function POST(request: NextRequest) {
       }
     })
     
-    // 8. 모든 컬럼의 너비를 자동 조정 (동적 너비 설정 후에는 제거)
+    // 8. 첫 번째 줄 고정 설정
+    formatRequests.push({
+      updateSheetProperties: {
+        properties: {
+          sheetId: newSheetId,
+          gridProperties: {
+            frozenRowCount: 1
+          }
+        },
+        fields: 'gridProperties.frozenRowCount'
+      }
+    })
+    
+    // 9. 모든 컬럼의 너비를 자동 조정 (동적 너비 설정 후에는 제거)
     // formatRequests.push({
     //   autoResizeDimensions: {
     //     dimensions: {
