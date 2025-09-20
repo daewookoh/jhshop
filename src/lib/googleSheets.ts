@@ -11,6 +11,7 @@ interface Product {
   name: string;
   is_active: boolean;
   sale_date?: string;
+  price?: number;
 }
 
 // Next.js API 호출 헬퍼

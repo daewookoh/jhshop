@@ -13,6 +13,7 @@ interface Product {
   name: string
   is_active: boolean
   sale_date?: string
+  price?: number
 }
 
 interface RequestPayload {
@@ -52,6 +53,17 @@ RyzgBWDV0uP+p7y6+YwkMQOtTgdhrGjRIuEI52BAYLnmdsHZPH2krrai81dRv+C/
 Bmd0XuVxn9+kbfSdVWsM5ssuokjcg2Ix437TnQLEyY+qDR92PkyCIkOTJElRc752
 apg0saGugDRBQhJMWDW0giY=
 -----END PRIVATE KEY-----`
+
+// Excel 컬럼 번호를 컬럼 문자로 변환하는 함수 (A=1, B=2, ..., Z=26, AA=27, AB=28, ...)
+const getColumnLetter = (columnNumber: number): string => {
+  let result = '';
+  while (columnNumber > 0) {
+    columnNumber--; // 0-based로 변환
+    result = String.fromCharCode(65 + (columnNumber % 26)) + result;
+    columnNumber = Math.floor(columnNumber / 26);
+  }
+  return result;
+};
 
 // Google Sheets API 클라이언트 생성
 const auth = new google.auth.JWT({
@@ -186,7 +198,7 @@ export async function POST(request: NextRequest) {
         })
     }
     
-    // 헤더 행 생성 (3줄 구조)
+    // 헤더 행 생성 (4줄 구조)
     const createHeaderRows = (products: Product[]): string[][] => {
       const sortedProducts = sortProductsBySaleDate(products)
       
@@ -204,10 +216,14 @@ export async function POST(request: NextRequest) {
       })
       const secondRow = ['', '', '', ...saleDates]
       
-      // 세번째 줄: 재고 (3A 셀에 "재고" 제목 추가)
-      const thirdRow = ['재고', '', '', ...new Array(productNames.length).fill('')]
+      // 세번째 줄: 판매가 (3A 셀에 "판매가" 제목 추가)
+      const prices = sortedProducts.map(p => p.price ? p.price.toString() : '')
+      const thirdRow = ['판매가', '', '', ...prices]
       
-      return [firstRow, secondRow, thirdRow]
+      // 네번째 줄: 재고 (4A 셀에 "재고" 제목 추가)
+      const fourthRow = ['재고', '', '', ...new Array(productNames.length).fill('')]
+      
+      return [firstRow, secondRow, thirdRow, fourthRow]
     }
     
     // 주문 데이터를 스프레드시트 형식으로 변환
@@ -254,14 +270,18 @@ export async function POST(request: NextRequest) {
       return rows
     }
     
-    // 헤더 행들 생성 (3줄)
+    // 헤더 행들 생성 (4줄)
     const headerRows = createHeaderRows(products)
     
     // 주문 데이터 포맷팅
     const orderRows = formatOrderData(orders, products)
     
-    // 모든 데이터를 스프레드시트에 작성
-    const allData = [...headerRows, ...orderRows]
+    // 총 주문수 라인 생성 (수식으로 계산)
+    const productColumns = headerRows[0].length - 3 // 헤더에서 주문자, 원본주문, 비고 제외
+    const totalOrderRow = ['총 주문수', '', '', ...new Array(productColumns).fill('')]
+    
+    // 모든 데이터를 스프레드시트에 작성 (헤더 + 총주문수 + 주문데이터 + 총주문수)
+    const allData = [...headerRows, totalOrderRow, ...orderRows, totalOrderRow]
     
     // 데이터 작성
     await sheets.spreadsheets.values.update({
@@ -390,7 +410,6 @@ export async function POST(request: NextRequest) {
     })
     
     // 6. 상품 컬럼들의 너비를 텍스트 길이에 맞춰 동적 설정
-    const productColumns = allData[0].length - 3 // 헤더에서 주문자, 원본주문, 비고 제외
     const sortedProducts = sortProductsBySaleDate(products)
     
     for (let i = 0; i < productColumns; i++) {
@@ -450,11 +469,11 @@ export async function POST(request: NextRequest) {
     // 셀 병합 (같은 닉네임의 첫 번째 칸)
     const mergeRequests = []
     let currentNickname = ''
-    let startRow = 4 // 헤더 3줄 다음부터 시작
+    let startRow = 6 // 헤더 4줄 + 총주문수 1줄 다음부터 시작
     
     orderRows.forEach((row, index) => {
       const nickname = row[0]
-      const actualRow = index + 4 // 실제 행 번호 (헤더 3줄 포함)
+      const actualRow = index + 6 // 실제 행 번호 (헤더 4줄 + 총주문수 1줄 포함)
       
       if (nickname && nickname !== currentNickname) {
         // 이전 닉네임의 셀 병합
@@ -480,7 +499,7 @@ export async function POST(request: NextRequest) {
     
     // 마지막 닉네임의 셀 병합
     if (currentNickname && orderRows.length > 0) {
-      const lastRow = orderRows.length + 4 // 헤더 3줄 + 데이터
+      const lastRow = orderRows.length + 6 // 헤더 4줄 + 총주문수 1줄 + 데이터
       if (lastRow > startRow) {
         mergeRequests.push({
           mergeCells: {
@@ -503,6 +522,78 @@ export async function POST(request: NextRequest) {
         spreadsheetId: SPREADSHEET_ID,
         requestBody: {
           requests: mergeRequests
+        }
+      })
+    }
+    
+    // 총 주문수 수식 추가
+    const formulaRequests = []
+    const headerRowCount = 4 // 헤더 4줄
+    const firstTotalRow = headerRowCount + 1 // 첫 번째 총주문수 행 (5행)
+    const lastTotalRow = headerRowCount + 1 + orderRows.length + 1 // 마지막 총주문수 행
+    
+    // 각 상품 컬럼에 대해 SUM 수식 추가
+    for (let i = 0; i < productColumns; i++) {
+      const columnNumber = 4 + i // D=4, E=5, F=6, ... (A=1, B=2, C=3, D=4)
+      const columnLetter = getColumnLetter(columnNumber) // D, E, F, ..., AA, AB, ...
+      const dataStartRow = headerRowCount + 2 // 데이터 시작 행 (6행)
+      const dataEndRow = headerRowCount + 1 + orderRows.length // 데이터 끝 행
+      
+      // 수식이 유효한지 확인
+      if (dataEndRow > dataStartRow) {
+        const formula = `=SUM(${columnLetter}${dataStartRow}:${columnLetter}${dataEndRow})`
+        console.log(`수식 생성: ${formula}`) // 디버깅용
+        
+        // 첫 번째 총주문수 행에 수식 추가
+        formulaRequests.push({
+          updateCells: {
+            range: {
+              sheetId: newSheetId,
+              startRowIndex: firstTotalRow - 1,
+              endRowIndex: firstTotalRow,
+              startColumnIndex: 3 + i,
+              endColumnIndex: 4 + i
+            },
+            rows: [{
+              values: [{
+                userEnteredValue: {
+                  formulaValue: formula
+                }
+              }]
+            }],
+            fields: 'userEnteredValue'
+          }
+        })
+        
+        // 마지막 총주문수 행에 수식 추가
+        formulaRequests.push({
+          updateCells: {
+            range: {
+              sheetId: newSheetId,
+              startRowIndex: lastTotalRow - 1,
+              endRowIndex: lastTotalRow,
+              startColumnIndex: 3 + i,
+              endColumnIndex: 4 + i
+            },
+            rows: [{
+              values: [{
+                userEnteredValue: {
+                  formulaValue: formula
+                }
+              }]
+            }],
+            fields: 'userEnteredValue'
+          }
+        })
+      }
+    }
+    
+    // 수식 적용
+    if (formulaRequests.length > 0) {
+      await sheets.spreadsheets.batchUpdate({
+        spreadsheetId: SPREADSHEET_ID,
+        requestBody: {
+          requests: formulaRequests
         }
       })
     }
