@@ -280,8 +280,11 @@ export async function POST(request: NextRequest) {
     const productColumns = headerRows[0].length - 3 // 헤더에서 주문자, 원본주문, 비고 제외
     const totalOrderRow = ['총 주문수', '', '', ...new Array(productColumns).fill('')]
     
-    // 모든 데이터를 스프레드시트에 작성 (헤더 + 총주문수 + 주문데이터 + 총주문수)
-    const allData = [...headerRows, totalOrderRow, ...orderRows, totalOrderRow]
+    // 총 판매액 라인 생성 (판매가 × 주문수)
+    const totalSalesDataRow = ['총 판매액', '', '', ...new Array(productColumns).fill('')]
+    
+    // 모든 데이터를 스프레드시트에 작성 (헤더 + 총주문수 + 주문데이터 + 총주문수 + 총판매액)
+    const allData = [...headerRows, totalOrderRow, ...orderRows, totalOrderRow, totalSalesDataRow]
     
     // 데이터 작성
     await sheets.spreadsheets.values.update({
@@ -495,13 +498,87 @@ export async function POST(request: NextRequest) {
       }
     })
     
-    // 8. 첫 번째 줄 고정 설정
+    // 8. 총 판매액 행의 숫자 형식 설정 (우측정렬, 천단위 콤마)
+    const totalSalesRowIndex = 4 + 1 + orderRows.length + 2 // 총 판매액 행
+    for (let i = 0; i < productColumns; i++) {
+      formatRequests.push({
+        repeatCell: {
+          range: {
+            sheetId: newSheetId,
+            startRowIndex: totalSalesRowIndex - 1,
+            endRowIndex: totalSalesRowIndex,
+            startColumnIndex: 3 + i,
+            endColumnIndex: 4 + i
+          },
+          cell: {
+            userEnteredFormat: {
+              horizontalAlignment: 'RIGHT',
+              verticalAlignment: 'MIDDLE',
+              numberFormat: {
+                type: 'NUMBER',
+                pattern: '#,##0'
+              }
+            }
+          },
+          fields: 'userEnteredFormat.horizontalAlignment,userEnteredFormat.verticalAlignment,userEnteredFormat.numberFormat'
+        }
+      })
+    }
+    
+    // B행의 전체 총 판매액 합계도 우측정렬, 천단위 콤마 설정
+    formatRequests.push({
+      repeatCell: {
+        range: {
+          sheetId: newSheetId,
+          startRowIndex: totalSalesRowIndex - 1,
+          endRowIndex: totalSalesRowIndex,
+          startColumnIndex: 1, // B열
+          endColumnIndex: 2
+        },
+        cell: {
+          userEnteredFormat: {
+            horizontalAlignment: 'RIGHT',
+            verticalAlignment: 'MIDDLE',
+            numberFormat: {
+              type: 'NUMBER',
+              pattern: '#,##0'
+            }
+          }
+        },
+        fields: 'userEnteredFormat.horizontalAlignment,userEnteredFormat.verticalAlignment,userEnteredFormat.numberFormat'
+      }
+    })
+    
+    // 9. A행(첫 번째 컬럼) 좌측정렬 및 글자 두껍게 설정
+    formatRequests.push({
+      repeatCell: {
+        range: {
+          sheetId: newSheetId,
+          startRowIndex: 0,
+          endRowIndex: allData.length,
+          startColumnIndex: 0, // A열
+          endColumnIndex: 1
+        },
+        cell: {
+          userEnteredFormat: {
+            horizontalAlignment: 'LEFT',
+            verticalAlignment: 'MIDDLE',
+            textFormat: {
+              bold: true
+            }
+          }
+        },
+        fields: 'userEnteredFormat.horizontalAlignment,userEnteredFormat.verticalAlignment,userEnteredFormat.textFormat.bold'
+      }
+    })
+    
+    // 10. 1-5줄 고정 설정 (헤더 4줄 + 총주문수 1줄)
     formatRequests.push({
       updateSheetProperties: {
         properties: {
           sheetId: newSheetId,
           gridProperties: {
-            frozenRowCount: 1
+            frozenRowCount: 5
           }
         },
         fields: 'gridProperties.frozenRowCount'
@@ -588,11 +665,12 @@ export async function POST(request: NextRequest) {
       })
     }
     
-    // 총 주문수 수식 추가
+    // 총 주문수 및 총 판매액 수식 추가
     const formulaRequests = []
     const headerRowCount = 4 // 헤더 4줄
     const firstTotalRow = headerRowCount + 1 // 첫 번째 총주문수 행 (5행)
     const lastTotalRow = headerRowCount + 1 + orderRows.length + 1 // 마지막 총주문수 행
+    const totalSalesRowNumber = headerRowCount + 1 + orderRows.length + 2 // 총 판매액 행 번호
     
     // 각 상품 컬럼에 대해 SUM 수식 추가
     for (let i = 0; i < productColumns; i++) {
@@ -649,6 +727,68 @@ export async function POST(request: NextRequest) {
         })
       }
     }
+    
+    // 총 판매액 수식 추가 (판매가 × 주문수)
+    for (let i = 0; i < productColumns; i++) {
+      const columnNumber = 4 + i // D=4, E=5, F=6, ... (A=1, B=2, C=3, D=4)
+      const columnLetter = getColumnLetter(columnNumber) // D, E, F, ..., AA, AB, ...
+      const priceRow = 3 // 판매가 행 (3행)
+      const firstTotalOrderRow = headerRowCount + 1 // 첫 번째 총주문수 행 (5행)
+      const lastTotalOrderRow = headerRowCount + 1 + orderRows.length + 1 // 마지막 총주문수 행
+      
+      // 판매가 × 총주문수 수식
+      const salesFormula = `=${columnLetter}${priceRow}*${columnLetter}${firstTotalOrderRow}`
+      console.log(`총 판매액 수식 생성: ${salesFormula}`) // 디버깅용
+      
+      formulaRequests.push({
+        updateCells: {
+          range: {
+            sheetId: newSheetId,
+            startRowIndex: totalSalesRowNumber - 1,
+            endRowIndex: totalSalesRowNumber,
+            startColumnIndex: 3 + i,
+            endColumnIndex: 4 + i
+          },
+          rows: [{
+            values: [{
+              userEnteredValue: {
+                formulaValue: salesFormula
+              }
+            }]
+          }],
+          fields: 'userEnteredValue'
+        }
+      })
+    }
+    
+    // B행에 전체 총 판매액 합계 수식 추가
+    const totalSalesStartColumn = 4 // D열부터 시작
+    const totalSalesEndColumn = 4 + productColumns - 1 // 마지막 상품 컬럼
+    const totalSalesStartLetter = getColumnLetter(totalSalesStartColumn)
+    const totalSalesEndLetter = getColumnLetter(totalSalesEndColumn)
+    const totalSalesFormula = `=SUM(${totalSalesStartLetter}${totalSalesRowNumber}:${totalSalesEndLetter}${totalSalesRowNumber})`
+    
+    console.log(`전체 총 판매액 수식 생성: ${totalSalesFormula}`) // 디버깅용
+    
+    formulaRequests.push({
+      updateCells: {
+        range: {
+          sheetId: newSheetId,
+          startRowIndex: totalSalesRowNumber - 1,
+          endRowIndex: totalSalesRowNumber,
+          startColumnIndex: 1, // B열
+          endColumnIndex: 2
+        },
+        rows: [{
+          values: [{
+            userEnteredValue: {
+              formulaValue: totalSalesFormula
+            }
+          }]
+        }],
+        fields: 'userEnteredValue'
+      }
+    })
     
     // 수식 적용
     if (formulaRequests.length > 0) {
