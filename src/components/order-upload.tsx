@@ -37,8 +37,6 @@ interface ProcessedOrder {
     quantity: number;
     price: number;
     total: number;
-    similarity: number;
-    originalText: string;
   }[];
   totalAmount: number;
 }
@@ -226,9 +224,6 @@ export function OrderUpload() {
       .sort((a, b) => a.nickname.localeCompare(b.nickname, 'ko')); // 닉네임 가나다 순 정렬
   };
 
-
-  // 배치 크기 설정 (프롬프트 길이 제한)
-  const MAX_PROMPT_LENGTH = 15000; // 약 15KB
   const BATCH_SIZE = 20; // 한 번에 처리할 주문 그룹 수
 
   // 시간 정보를 제거하는 함수
@@ -252,6 +247,8 @@ export function OrderUpload() {
       }
       return line;
     }).join('\n');
+
+    console.log(productList);
     
     return `당신은 카카오톡 주문 메시지 분석 전문가입니다.
 
@@ -273,7 +270,7 @@ ${cleanedOrdersText}
    - 상품명은 반드시 위 상품 목록에 있는 정확한 이름을 사용 (예: "곱창전골도 1팩 추가할게용" → "곱창전골")
 4. 수량 추출 규칙 (매우 중요 - 반드시 정확히 계산하세요):
    
-   **편육 관련 특별 규칙:**
+   **상품단위 관련 특별 규칙:**
    - "편육 2팩" → quantity: 1 (흙돼지편육2팩 상품 1개 주문)
    - "편육 4팩" → quantity: 2 (흙돼지편육2팩 상품 2개 주문)
    - "편육 6팩" → quantity: 3 (흙돼지편육2팩 상품 3개 주문)
@@ -292,12 +289,8 @@ ${cleanedOrdersText}
    - 주문에서 요청한 총 수량을 상품의 단위로 나누어 계산하세요
    - 숫자 + 단위(팩, 개, 키로, kg 등) 패턴을 정확히 인식하세요
    - 상품명 자체에 숫자가 포함된 경우와 주문 수량을 구분하세요
-5. 가격은 반드시 상품 목록에서 해당 상품의 정확한 가격을 사용 (절대 0원이면 안됨)
-6. 유사도는 0.0~1.0으로 평가 (1.0=완전일치)
 7. 매핑 불가능한 주문도 최대한 상품을 찾아서 매핑하세요. 빈 products 배열은 최후의 수단입니다.
 8. 모든 원본 주문 텍스트는 절대 누락되어서는 안 됨
-10. 가격이 0원인 경우는 절대 허용되지 않음 - 반드시 상품 목록에서 정확한 가격을 찾아서 사용
-11. 예외 처리: 만약 목록에 없는 상품을 주문하거나, 수량이 불분명하면 'error' 필드에 이유를 적어줘${batchWarning}
 
 === 수량 추출 예시 ===
 - "편육 2팩" → quantity: 1 (흙돼지편육2팩 상품 1개)
@@ -314,15 +307,10 @@ ${cleanedOrdersText}
   "orders": [
     {
       "nickname": "닉네임",
-      "orderTime": "가장 최근 주문시간",
-      "orderText": "원본 주문 텍스트 전체",
       "products": [
         {
           "name": "상품명",
-          "quantity": 수량,
-          "price": 가격,
-          "total": 총가격,
-          "similarity": 유사도
+          "quantity": 수량
         }
       ]
     }
@@ -366,7 +354,7 @@ ${cleanedOrdersText}
       // 미리 그룹화된 주문 사용
       const groupedOrders = groupOrdersByNickname(orders);
 
-      const productList = activeProducts.map(p => `${p.name}(${p.price}원)`).join(', ');
+      const productList = activeProducts.map(p => `${p.name.replace(/\n/g, ' ')}`).join(',');
       
       // 배치 처리 여부 결정
       const needsBatchProcessing = groupedOrders.length > BATCH_SIZE;
@@ -605,8 +593,8 @@ ${cleanedOrdersText}
         );
         const orderText = groupedOrder?.combinedText || orderData.orderText || '';
         
-        // 원본 텍스트가 누락된 경우 그룹화된 주문에서 복원 및 가격 검증
-        const productsWithOriginalText = orderData.products.map((product: any) => {
+        // AI가 반환한 상품명을 DB의 정확한 상품명으로 매핑
+        const productsWithPrice = orderData.products.map((product: any) => {
           // AI가 반환한 상품명을 DB의 정확한 상품명으로 매핑
           const cleanedName = product.name.replace(/\n/g, ' ').replace(/\s+/g, ' ').trim();
           const matchedProduct = activeProducts.find(p => {
@@ -643,27 +631,15 @@ ${cleanedOrdersText}
             }
           }
           
-          // 주문내역의 원본주문 내용을 그대로 사용
-          const groupedOrder = groupedOrders.find(g => 
-            g.nickname === orderData.nickname || 
-            g.nickname.includes(orderData.nickname) || 
-            orderData.nickname.includes(g.nickname)
-          );
-          if (groupedOrder) {
-            product.originalText = groupedOrder.combinedText;
-          } else {
-            console.error(`원본 텍스트를 찾을 수 없음 - ${orderData.nickname}:`, product.name);
-            product.originalText = '원본 주문내역을 찾을 수 없습니다';
-          }
           
           return product;
         });
         
         return {
           nickname: orderData.nickname,
-          orderTime: orderData.orderTime,
+          orderTime: orderData.orderTime || groupedOrder?.latestOrderTime || '시간 정보 없음',
           orderText: orderText, // 그룹화된 주문에서 가져온 원본 텍스트 사용
-          products: productsWithOriginalText,
+          products: productsWithPrice,
           totalAmount
         };
       });
@@ -691,8 +667,8 @@ ${cleanedOrdersText}
           content: prompt
         }
       ],
-      temperature: 0.1,
-      max_tokens: 8000
+      temperature: 0.0,
+      max_tokens: 15000
     });
     
 
@@ -713,8 +689,8 @@ ${cleanedOrdersText}
         );
         const orderText = groupedOrder?.combinedText || orderData.orderText || '';
         
-        // 원본 텍스트가 누락된 경우 그룹화된 주문에서 복원 및 가격 검증
-        const productsWithOriginalText = orderData.products.map((product: any) => {
+        // AI가 반환한 상품명을 DB의 정확한 상품명으로 매핑
+        const productsWithPrice = orderData.products.map((product: any) => {
           // AI가 반환한 상품명을 DB의 정확한 상품명으로 매핑
           const cleanedName = product.name.replace(/\n/g, ' ').replace(/\s+/g, ' ').trim();
           const matchedProduct = activeProducts.find(p => {
@@ -751,27 +727,15 @@ ${cleanedOrdersText}
             }
           }
           
-          // 주문내역의 원본주문 내용을 그대로 사용
-          const groupedOrder = groupedOrders.find(g => 
-            g.nickname === orderData.nickname || 
-            g.nickname.includes(orderData.nickname) || 
-            orderData.nickname.includes(g.nickname)
-          );
-          if (groupedOrder) {
-            product.originalText = groupedOrder.combinedText;
-          } else {
-            console.error(`원본 텍스트를 찾을 수 없음 - ${orderData.nickname}:`, product.name);
-            product.originalText = '원본 주문내역을 찾을 수 없습니다';
-          }
           
           return product;
         });
         
         return {
           nickname: orderData.nickname,
-          orderTime: orderData.orderTime,
+          orderTime: orderData.orderTime || groupedOrder?.latestOrderTime || '시간 정보 없음',
           orderText: orderText, // 그룹화된 주문에서 가져온 원본 텍스트 사용
-          products: productsWithOriginalText,
+          products: productsWithPrice,
           totalAmount
         };
       });
@@ -1253,14 +1217,6 @@ ${cleanedOrdersText}
               <CardContent>
                 <div className="space-y-4">
                   {batchResults.map((order, index) => {
-                    // 그룹화된 주문에서 원본 텍스트 가져오기 (닉네임 매칭 개선)
-                    const groupedOrder = groupedOrders.find(g => 
-                      g.nickname === order.nickname || 
-                      g.nickname.includes(order.nickname) || 
-                      order.nickname.includes(g.nickname)
-                    );
-                    const combinedOriginalText = groupedOrder?.combinedText || '원본 주문내역을 찾을 수 없습니다';
-                    
                     return (
                       <div key={index} className="border rounded-lg p-3 bg-green-50">
                         <div className="flex items-center justify-between mb-2">
@@ -1269,7 +1225,7 @@ ${cleanedOrdersText}
                               {order.nickname} ({order.orderText.split('\n').length}건)
                             </Badge>
                             <span className="text-sm text-muted-foreground">
-                              {order.orderTime.includes('-') ? 
+                              {order.orderTime && order.orderTime.includes('-') ? 
                                 (() => {
                                   const parts = order.orderTime.split(' ');
                                   if (parts.length >= 2) {
@@ -1277,7 +1233,7 @@ ${cleanedOrdersText}
                                   }
                                   return order.orderTime;
                                 })() : 
-                                order.orderTime
+                                order.orderTime || '시간 정보 없음'
                               }
                             </span>
                           </div>
@@ -1292,24 +1248,34 @@ ${cleanedOrdersText}
                             <h4 className="font-medium text-xs text-muted-foreground">원본 주문내역</h4>
                             <div className="p-1 bg-white rounded">
                               <div className="text-[12px] font-mono  break-words">
-                                {combinedOriginalText.split(/(?=\[오[전후]\s+\d+:\d+\])/).map((part, index) => {
-                                  // [18일 오후 12:51] 패턴으로 줄바꿈 처리
-                                  if (part.trim()) {
-                                    const trimmedPart = part.trim();
-                                    // 시간 패턴만 있고 내용이 없는 라인 제거
-                                    const timeOnlyPattern = /^\[오[전후]\s+\d+:\d+\]\s*$/;
-                                    if (timeOnlyPattern.test(trimmedPart)) {
-                                      return null;
+                                {(() => {
+                                  // 그룹화된 주문에서 원본 텍스트 가져오기
+                                  const groupedOrder = groupedOrders.find(g => 
+                                    g.nickname === order.nickname || 
+                                    g.nickname.includes(order.nickname) || 
+                                    order.nickname.includes(g.nickname)
+                                  );
+                                  const combinedOriginalText = groupedOrder?.combinedText || '원본 주문내역을 찾을 수 없습니다';
+                                  
+                                  return combinedOriginalText.split(/(?=\[오[전후]\s+\d+:\d+\])/).map((part, index) => {
+                                    // [18일 오후 12:51] 패턴으로 줄바꿈 처리
+                                    if (part.trim()) {
+                                      const trimmedPart = part.trim();
+                                      // 시간 패턴만 있고 내용이 없는 라인 제거
+                                      const timeOnlyPattern = /^\[오[전후]\s+\d+:\d+\]\s*$/;
+                                      if (timeOnlyPattern.test(trimmedPart)) {
+                                        return null;
+                                      }
+                                      return (
+                                        <span key={index}>
+                                          {index > 0 && '\n'}
+                                          {trimmedPart}
+                                        </span>
+                                      );
                                     }
-                                    return (
-                                      <span key={index}>
-                                        {index > 0 && '\n'}
-                                        {trimmedPart}
-                                      </span>
-                                    );
-                                  }
-                                  return null;
-                                }).filter(Boolean)}
+                                    return null;
+                                  }).filter(Boolean);
+                                })()}
                               </div>
                             </div>
                           </div>
@@ -1327,18 +1293,7 @@ ${cleanedOrdersText}
                                     <div className="min-w-0 flex-1">
                                       <div className="font-medium whitespace-pre-line">{product.name}</div>
                                       <div className="text-xs text-muted-foreground">({product.price.toLocaleString()}원)</div>
-                                      {product.originalText && (
-                                        <div className="text-xs text-muted-foreground mt-1 whitespace-pre-line">
-                                          {product.originalText}
-                                        </div>
-                                      )}
                                     </div>
-                                    <Badge 
-                                      variant={product.similarity >= 0.8 ? "default" : product.similarity >= 0.6 ? "secondary" : "destructive"}
-                                      className="text-xs flex-shrink-0"
-                                    >
-                                      {Math.round(product.similarity * 100)}%
-                                    </Badge>
                                   </div>
                                   <div className="text-right flex-shrink-0 ml-2">
                                     <div className="text-xs text-muted-foreground">
@@ -1378,14 +1333,6 @@ ${cleanedOrdersText}
               <CardContent>
                 <div className="space-y-4">
                   {processedOrders.map((order, index) => {
-                    // 그룹화된 주문에서 원본 텍스트 가져오기 (닉네임 매칭 개선)
-                    const groupedOrder = groupedOrders.find(g => 
-                      g.nickname === order.nickname || 
-                      g.nickname.includes(order.nickname) || 
-                      order.nickname.includes(g.nickname)
-                    );
-                    const combinedOriginalText = groupedOrder?.combinedText || '원본 주문내역을 찾을 수 없습니다';
-                    
                     return (
                       <div key={index} className="border rounded-lg p-4">
                         <div className="flex items-center justify-between mb-3">
@@ -1394,7 +1341,7 @@ ${cleanedOrdersText}
                               {order.nickname} ({order.orderText.split('\n').length}건)
                             </Badge>
                             <span className="text-sm text-muted-foreground">
-                              {order.orderTime.includes('-') ? 
+                              {order.orderTime && order.orderTime.includes('-') ? 
                                 (() => {
                                   const parts = order.orderTime.split(' ');
                                   if (parts.length >= 2) {
@@ -1403,7 +1350,7 @@ ${cleanedOrdersText}
                                   }
                                   return order.orderTime;
                                 })() : 
-                                order.orderTime
+                                order.orderTime || '시간 정보 없음'
                               }
                             </span>
                           </div>
@@ -1418,24 +1365,34 @@ ${cleanedOrdersText}
                             <h4 className="font-medium text-sm text-muted-foreground">원본 주문내역</h4>
                             <div className="p-2 bg-muted rounded">
                               <div className="text-[12px] font-mono  break-words">
-                                {combinedOriginalText.split(/(?=\[오[전후]\s+\d+:\d+\])/).map((part, index) => {
-                                  // [18일 오후 12:51] 패턴으로 줄바꿈 처리
-                                  if (part.trim()) {
-                                    const trimmedPart = part.trim();
-                                    // 시간 패턴만 있고 내용이 없는 라인 제거
-                                    const timeOnlyPattern = /^\[오[전후]\s+\d+:\d+\]\s*$/;
-                                    if (timeOnlyPattern.test(trimmedPart)) {
-                                      return null;
+                                {(() => {
+                                  // 그룹화된 주문에서 원본 텍스트 가져오기
+                                  const groupedOrder = groupedOrders.find(g => 
+                                    g.nickname === order.nickname || 
+                                    g.nickname.includes(order.nickname) || 
+                                    order.nickname.includes(g.nickname)
+                                  );
+                                  const combinedOriginalText = groupedOrder?.combinedText || '원본 주문내역을 찾을 수 없습니다';
+                                  
+                                  return combinedOriginalText.split(/(?=\[오[전후]\s+\d+:\d+\])/).map((part, index) => {
+                                    // [18일 오후 12:51] 패턴으로 줄바꿈 처리
+                                    if (part.trim()) {
+                                      const trimmedPart = part.trim();
+                                      // 시간 패턴만 있고 내용이 없는 라인 제거
+                                      const timeOnlyPattern = /^\[오[전후]\s+\d+:\d+\]\s*$/;
+                                      if (timeOnlyPattern.test(trimmedPart)) {
+                                        return null;
+                                      }
+                                      return (
+                                        <span key={index}>
+                                          {index > 0 && '\n'}
+                                          {trimmedPart}
+                                        </span>
+                                      );
                                     }
-                                    return (
-                                      <span key={index}>
-                                        {index > 0 && '\n'}
-                                        {trimmedPart}
-                                      </span>
-                                    );
-                                  }
-                                  return null;
-                                }).filter(Boolean)}
+                                    return null;
+                                  }).filter(Boolean);
+                                })()}
                               </div>
                             </div>
                           </div>
@@ -1453,18 +1410,7 @@ ${cleanedOrdersText}
                                     <div className="min-w-0 flex-1">
                                       <div className="font-medium whitespace-pre-line">{product.name}</div>
                                       <div className="text-xs text-muted-foreground">({product.price.toLocaleString()}원)</div>
-                                      {product.originalText && (
-                                        <div className="text-xs text-muted-foreground mt-1 whitespace-pre-line">
-                                          {product.originalText}
-                                        </div>
-                                      )}
                                     </div>
-                                    <Badge 
-                                      variant={product.similarity >= 0.8 ? "default" : product.similarity >= 0.6 ? "secondary" : "destructive"}
-                                      className="text-xs flex-shrink-0"
-                                    >
-                                      {Math.round(product.similarity * 100)}%
-                                    </Badge>
                                   </div>
                                   <div className="text-right flex-shrink-0 ml-2">
                                     <div className="text-xs text-muted-foreground">
