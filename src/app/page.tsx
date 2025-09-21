@@ -156,6 +156,13 @@ export default function Home() {
     }
   }, [activeTab]);
 
+  // Redirect to login page if user is not authenticated
+  useEffect(() => {
+    if (initialized && !user) {
+      router.push('/auth');
+    }
+  }, [initialized, user, router]);
+
   if ((!profile || loading) && initialized && user) {
     return (
       <div className="min-h-screen bg-background">
@@ -189,13 +196,6 @@ export default function Home() {
       </div>
     );
   }
-
-  // Redirect to login page if user is not authenticated
-  useEffect(() => {
-    if (initialized && !user) {
-      router.push('/auth');
-    }
-  }, [initialized, user, router]);
 
   // Show nothing while redirecting
   if (initialized && !user) {
