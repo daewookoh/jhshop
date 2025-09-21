@@ -16,7 +16,7 @@ interface Product {
   name: string;
   is_active: boolean;
   sale_date?: string;
-  price?: number;
+  price: number;  // 필수 필드로 변경
 }
 
 // Next.js API 호출 헬퍼

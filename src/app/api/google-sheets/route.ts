@@ -18,7 +18,7 @@ interface Product {
   name: string
   is_active: boolean
   sale_date?: string
-  price?: number
+  price: number  // 필수 필드로 변경
 }
 
 interface RequestPayload {
@@ -69,6 +69,7 @@ const getColumnLetter = (columnNumber: number): string => {
   }
   return result;
 };
+
 
 // Google Sheets API 클라이언트 생성
 const auth = new google.auth.JWT({
@@ -171,7 +172,7 @@ export async function POST(request: NextRequest) {
     // 상품 목록을 판매일 역순, 상시는 마지막, 같은 판매일은 가나다순으로 정렬
     const sortProductsBySaleDate = (products: Product[]): Product[] => {
       return products
-        .filter(p => p.is_active)
+        .filter(p => p.is_active && p.price > 0)  // 가격이 있는 활성 상품만 필터링
         .sort((a, b) => {
           // sale_date가 없거나 빈 문자열이거나 유효하지 않은 날짜인 경우 상시로 처리
           const isValidDate = (dateStr: string | undefined) => {
@@ -222,7 +223,7 @@ export async function POST(request: NextRequest) {
       const secondRow = ['', '', '', ...saleDates]
       
       // 세번째 줄: 판매가 (3A 셀에 "판매가" 제목 추가)
-      const prices = sortedProducts.map(p => p.price || '')
+      const prices = sortedProducts.map(p => p.price || 0)
       const thirdRow = ['판매가', '', '', ...prices]
       
       // 네번째 줄: 재고 (4A 셀에 "재고" 제목 추가)
@@ -257,95 +258,80 @@ export async function POST(request: NextRequest) {
             row.push('')
           }
           
-          // 원본주문 (줄바꿈 문자를 구글시트에서 인식할 수 있도록 처리)
+          // 원본주문 (상품명과 수량이 여러 줄에 걸쳐 있을 때 합치고, 여러 상품을 분리)
           const processedOrderText = order.orderText
             .replace(/\r\n/g, '\n')  // Windows 줄바꿈을 Unix 줄바꿈으로 통일
             .replace(/\r/g, '\n')    // Mac 줄바꿈을 Unix 줄바꿈으로 통일
-            .replace(/\n/g, '\n');   // 명시적으로 줄바꿈 문자 보장
-          row.push(processedOrderText)
+            .split('\n')             // 줄바꿈으로 분리
+            .map(line => line.trim()) // 각 줄의 앞뒤 공백 제거
+            .filter(line => line.length > 0) // 빈 줄 제거
+            .join(' ')               // 모든 줄을 공백으로 연결하여 하나의 줄로 만들기
+            .replace(/\s+/g, ' ')    // 연속된 공백을 하나의 공백으로 정리
+            .trim();                 // 전체 앞뒤 공백 제거
+            
+          // 여러 상품이 한 줄에 있을 때 분리 (숫자 + "개"로 끝나는 패턴을 기준으로 분리)
+          const productPattern = /(\d+개)(?=\s|$)/g;
+          const parts = processedOrderText.split(productPattern);
+          
+          let finalOrderText;
+          if (parts.length > 1) {
+            // 분리된 부분들을 다시 조합하여 상품별로 정리
+            const products = [];
+            for (let i = 0; i < parts.length; i += 2) {
+              if (parts[i] && parts[i + 1]) {
+                const product = (parts[i] + parts[i + 1]).trim();
+                if (product) {
+                  products.push(product);
+                }
+              }
+            }
+            
+            if (products.length > 1) {
+              finalOrderText = products.join('\n');
+            } else {
+              finalOrderText = processedOrderText;
+            }
+          } else {
+            // 분리할 수 없으면 원본 유지
+            finalOrderText = processedOrderText;
+          }
+          
+          row.push(finalOrderText)
           
           // 비고
           row.push(order.notes || '')
           
           // 상품별 주문 수량 처리
           sortedProducts.forEach(product => {
-            // AI 분석된 상품 정보가 있는지 확인
+            // 최종주문목록에서 전달된 상품 정보가 있는지 확인
             if (order.products && Array.isArray(order.products) && order.products.length > 0) {
-              // AI 분석된 상품 정보인지 확인 (객체 형태)
-              const isAnalyzedProduct = typeof order.products[0] === 'object' && 'quantity' in order.products[0]
+              // 최종주문목록 상품 정보인지 확인 (객체 형태)
+              const isFinalOrderProduct = typeof order.products[0] === 'object' && 'quantity' in order.products[0]
               
-              if (isAnalyzedProduct) {
-                // AI 분석된 상품 정보에서 해당 상품의 수량 찾기 (강화된 매칭 로직)
-                const analyzedProduct = (order.products as any[]).find(p => {
+              if (isFinalOrderProduct) {
+                // 최종주문목록에서 해당 상품의 수량 찾기 (정확한 매칭)
+                const finalOrderProduct = (order.products as any[]).find(p => {
                   if (!p.name) return false;
                   
-                  const cleanedAnalyzedName = p.name.replace(/\n/g, ' ').replace(/\s+/g, ' ').trim();
+                  const cleanedFinalOrderName = p.name.replace(/\n/g, ' ').replace(/\s+/g, ' ').trim();
                   const cleanedProductName = product.name.replace(/\n/g, ' ').replace(/\s+/g, ' ').trim();
                   
-                  // 1. 정확히 일치
-                  if (cleanedAnalyzedName === cleanedProductName) {
-                    console.log(`상품 매칭 성공 (정확 일치): "${cleanedAnalyzedName}" → "${cleanedProductName}", 수량: ${p.quantity}`);
+                  // 정확히 일치하는 경우만 매칭 (최종주문목록은 이미 정확한 상품명으로 선택됨)
+                  if (cleanedFinalOrderName === cleanedProductName) {
+                    console.log(`최종주문 상품 매칭 성공: "${cleanedFinalOrderName}" → "${cleanedProductName}", 수량: ${p.quantity}`);
                     return true;
-                  }
-                  
-                  // 2. 상품명이 분석된 이름을 포함하거나 그 반대
-                  if (cleanedProductName.includes(cleanedAnalyzedName) || cleanedAnalyzedName.includes(cleanedProductName)) {
-                    console.log(`상품 매칭 성공 (포함 관계): "${cleanedAnalyzedName}" → "${cleanedProductName}", 수량: ${p.quantity}`);
-                    return true;
-                  }
-                  
-                  // 3. 키워드 기반 매칭 (예: "편육" → "흙돼지편육2팩")
-                  const analyzedKeywords = cleanedAnalyzedName.toLowerCase().split(/[\s\-\(\)\[\]]+/).filter((k: string) => k.length > 1);
-                  const productKeywords = cleanedProductName.toLowerCase().split(/[\s\-\(\)\[\]]+/).filter((k: string) => k.length > 1);
-                  
-                  // 공통 키워드가 있는지 확인
-                  const commonKeywords = analyzedKeywords.filter((keyword: string) => 
-                    productKeywords.some((pKeyword: string) => 
-                      pKeyword.includes(keyword) || keyword.includes(pKeyword)
-                    )
-                  );
-                  
-                  if (commonKeywords.length > 0) {
-                    console.log(`상품 매칭 성공 (키워드 매칭): "${cleanedAnalyzedName}" → "${cleanedProductName}", 공통키워드: ${commonKeywords.join(', ')}, 수량: ${p.quantity}`);
-                    return true;
-                  }
-                  
-                  // 4. 특별한 경우들 처리
-                  const specialCases = [
-                    // 편육 관련
-                    { from: '편육', to: '흙돼지편육' },
-                    { from: '편육', to: '편육' },
-                    // 파김치 관련
-                    { from: '파김치', to: '방할머니 파김치' },
-                    { from: '방할머니', to: '방할머니 파김치' },
-                    // 닭발 관련
-                    { from: '닭발', to: '무뼈닭발' },
-                    { from: '무뼈', to: '무뼈닭발' },
-                    // 곱창 관련
-                    { from: '곱창', to: '곱창전골' },
-                    { from: '전골', to: '곱창전골' }
-                  ];
-                  
-                  for (const specialCase of specialCases) {
-                    if (cleanedAnalyzedName.toLowerCase().includes(specialCase.from) && 
-                        cleanedProductName.toLowerCase().includes(specialCase.to)) {
-                      console.log(`상품 매칭 성공 (특별 케이스): "${cleanedAnalyzedName}" → "${cleanedProductName}", 수량: ${p.quantity}`);
-                      return true;
-                    }
                   }
                   
                   return false;
-                })
+                });
                 
-                if (analyzedProduct) {
-                  // 숫자로 변환하여 구글시트에서 숫자로 인식되도록 함
-                  row.push(analyzedProduct.quantity)
+                if (finalOrderProduct) {
+                  row.push(finalOrderProduct.quantity.toString())
                 } else {
-                  console.log(`상품 매칭 실패: "${product.name}" (닉네임: ${order.nickname})`);
                   row.push('')
                 }
               } else {
-                // 기존 방식 (문자열 배열)
+                // 기존 방식 (문자열 배열) - 빈 값으로 처리
                 row.push('')
               }
             } else {
@@ -370,14 +356,16 @@ export async function POST(request: NextRequest) {
     
     // 총 주문수 라인 생성 (수식으로 계산)
     const productColumns = headerRows[0].length - 3 // 헤더에서 주문자, 원본주문, 비고 제외
-    const startRow = headerRows.length + 1; // 헤더 다음부터 시작
-    const endRow = startRow + orderRows.length - 1; // 주문 데이터 끝
+    const dataStartRow = headerRows.length + 2; // 헤더 다음 + 총주문수 행 다음부터 시작 (D6부터)
+    const dataEndRow = dataStartRow + orderRows.length - 1; // 주문 데이터 끝
     
     // 각 상품별 총 주문수 계산 수식
     const totalOrderFormulas = [];
     for (let i = 0; i < productColumns; i++) {
       const columnLetter = getColumnLetter(4 + i); // D, E, F, ... (주문자, 원본주문, 비고 제외)
-      totalOrderFormulas.push(`=SUM(${columnLetter}${startRow}:${columnLetter}${endRow})`);
+      const formula = `=SUM(${columnLetter}${dataStartRow}:${columnLetter}${dataEndRow})`;
+      totalOrderFormulas.push(formula);
+      console.log(`총 주문수 수식 ${i + 1}: ${formula}`); // 디버깅용
     }
     const totalOrderRow = ['총 주문수', '', '', ...totalOrderFormulas]
     
@@ -842,7 +830,6 @@ export async function POST(request: NextRequest) {
       const columnLetter = getColumnLetter(columnNumber) // D, E, F, ..., AA, AB, ...
       const priceRow = 3 // 판매가 행 (3행)
       const firstTotalOrderRow = headerRowCount + 1 // 첫 번째 총주문수 행 (5행)
-      const lastTotalOrderRow = headerRowCount + 1 + orderRows.length + 1 // 마지막 총주문수 행
       
       // 판매가 × 총주문수 수식
       const salesFormula = `=${columnLetter}${priceRow}*${columnLetter}${firstTotalOrderRow}`
@@ -870,13 +857,14 @@ export async function POST(request: NextRequest) {
     }
     
     // B행에 전체 총 판매액 합계 수식 추가
-    const totalSalesStartColumn = 4 // D열부터 시작
-    const totalSalesEndColumn = 4 + productColumns - 1 // 마지막 상품 컬럼
+    const totalSalesStartColumn = 4 // D열부터 시작 (A=1, B=2, C=3, D=4)
+    const totalSalesEndColumn = 3 + productColumns // 마지막 상품 컬럼 (D=4부터 시작하므로 3+productColumns)
     const totalSalesStartLetter = getColumnLetter(totalSalesStartColumn)
     const totalSalesEndLetter = getColumnLetter(totalSalesEndColumn)
     const totalSalesFormula = `=SUM(${totalSalesStartLetter}${totalSalesRowNumber}:${totalSalesEndLetter}${totalSalesRowNumber})`
     
     console.log(`전체 총 판매액 수식 생성: ${totalSalesFormula}`) // 디버깅용
+    console.log(`상품 컬럼 수: ${productColumns}, 시작 컬럼: ${totalSalesStartColumn}(${totalSalesStartLetter}), 끝 컬럼: ${totalSalesEndColumn}(${totalSalesEndLetter})`)
     
     formulaRequests.push({
       updateCells: {
