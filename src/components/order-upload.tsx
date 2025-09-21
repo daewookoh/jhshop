@@ -295,8 +295,7 @@ ${cleanedOrdersText}
 5. 가격은 반드시 상품 목록에서 해당 상품의 정확한 가격을 사용 (절대 0원이면 안됨)
 6. 유사도는 0.0~1.0으로 평가 (1.0=완전일치)
 7. 매핑 불가능한 주문도 최대한 상품을 찾아서 매핑하세요. 빈 products 배열은 최후의 수단입니다.
-8. originalText는 각 상품별로 해당 상품과 관련된 원본 텍스트 부분을 저장 (줄바꿈 제거)
-9. 모든 원본 주문 텍스트는 절대 누락되어서는 안 됨
+8. 모든 원본 주문 텍스트는 절대 누락되어서는 안 됨
 10. 가격이 0원인 경우는 절대 허용되지 않음 - 반드시 상품 목록에서 정확한 가격을 찾아서 사용
 11. 예외 처리: 만약 목록에 없는 상품을 주문하거나, 수량이 불분명하면 'error' 필드에 이유를 적어줘${batchWarning}
 
@@ -323,8 +322,7 @@ ${cleanedOrdersText}
           "quantity": 수량,
           "price": 가격,
           "total": 총가격,
-          "similarity": 유사도,
-          "originalText": "모든 원본텍스트 합친 것 (줄바꿈 제거)"
+          "similarity": 유사도
         }
       ]
     }
@@ -645,20 +643,17 @@ ${cleanedOrdersText}
             }
           }
           
-          if (!product.originalText || product.originalText.trim() === '') {
-            // 그룹화된 주문에서 원본 텍스트 찾기 (닉네임 매칭 개선)
-            const groupedOrder = groupedOrders.find(g => 
-              g.nickname === orderData.nickname || 
-              g.nickname.includes(orderData.nickname) || 
-              orderData.nickname.includes(g.nickname)
-            );
-            if (groupedOrder) {
-              console.warn(`원본 텍스트 누락 복원 - ${orderData.nickname}:`, product.name);
-              product.originalText = groupedOrder.combinedText;
-            } else {
-              console.error(`원본 텍스트를 찾을 수 없음 - ${orderData.nickname}:`, product.name);
-              product.originalText = '원본 주문내역을 찾을 수 없습니다';
-            }
+          // 주문내역의 원본주문 내용을 그대로 사용
+          const groupedOrder = groupedOrders.find(g => 
+            g.nickname === orderData.nickname || 
+            g.nickname.includes(orderData.nickname) || 
+            orderData.nickname.includes(g.nickname)
+          );
+          if (groupedOrder) {
+            product.originalText = groupedOrder.combinedText;
+          } else {
+            console.error(`원본 텍스트를 찾을 수 없음 - ${orderData.nickname}:`, product.name);
+            product.originalText = '원본 주문내역을 찾을 수 없습니다';
           }
           
           return product;
@@ -756,20 +751,17 @@ ${cleanedOrdersText}
             }
           }
           
-          if (!product.originalText || product.originalText.trim() === '') {
-            // 그룹화된 주문에서 원본 텍스트 찾기 (닉네임 매칭 개선)
-            const groupedOrder = groupedOrders.find(g => 
-              g.nickname === orderData.nickname || 
-              g.nickname.includes(orderData.nickname) || 
-              orderData.nickname.includes(g.nickname)
-            );
-            if (groupedOrder) {
-              console.warn(`원본 텍스트 누락 복원 - ${orderData.nickname}:`, product.name);
-              product.originalText = groupedOrder.combinedText;
-            } else {
-              console.error(`원본 텍스트를 찾을 수 없음 - ${orderData.nickname}:`, product.name);
-              product.originalText = '원본 주문내역을 찾을 수 없습니다';
-            }
+          // 주문내역의 원본주문 내용을 그대로 사용
+          const groupedOrder = groupedOrders.find(g => 
+            g.nickname === orderData.nickname || 
+            g.nickname.includes(orderData.nickname) || 
+            orderData.nickname.includes(g.nickname)
+          );
+          if (groupedOrder) {
+            product.originalText = groupedOrder.combinedText;
+          } else {
+            console.error(`원본 텍스트를 찾을 수 없음 - ${orderData.nickname}:`, product.name);
+            product.originalText = '원본 주문내역을 찾을 수 없습니다';
           }
           
           return product;
@@ -1333,8 +1325,13 @@ ${cleanedOrdersText}
                                 <div key={pIndex} className="flex items-center justify-between text-xs p-1 bg-white rounded">
                                   <div className="flex items-center gap-2 min-w-0 flex-1">
                                     <div className="min-w-0 flex-1">
-                                      <div className="font-medium">{product.name.replace(/\n/g, ' ').replace(/\s+/g, ' ').trim()}</div>
+                                      <div className="font-medium whitespace-pre-line">{product.name}</div>
                                       <div className="text-xs text-muted-foreground">({product.price.toLocaleString()}원)</div>
+                                      {product.originalText && (
+                                        <div className="text-xs text-muted-foreground mt-1 whitespace-pre-line">
+                                          {product.originalText}
+                                        </div>
+                                      )}
                                     </div>
                                     <Badge 
                                       variant={product.similarity >= 0.8 ? "default" : product.similarity >= 0.6 ? "secondary" : "destructive"}
@@ -1454,8 +1451,13 @@ ${cleanedOrdersText}
                                 <div key={pIndex} className="flex items-center justify-between text-sm p-2 bg-muted rounded">
                                   <div className="flex items-center gap-2 min-w-0 flex-1">
                                     <div className="min-w-0 flex-1">
-                                      <div className="font-medium">{product.name.replace(/\n/g, ' ').replace(/\s+/g, ' ').trim()}</div>
+                                      <div className="font-medium whitespace-pre-line">{product.name}</div>
                                       <div className="text-xs text-muted-foreground">({product.price.toLocaleString()}원)</div>
+                                      {product.originalText && (
+                                        <div className="text-xs text-muted-foreground mt-1 whitespace-pre-line">
+                                          {product.originalText}
+                                        </div>
+                                      )}
                                     </div>
                                     <Badge 
                                       variant={product.similarity >= 0.8 ? "default" : product.similarity >= 0.6 ? "secondary" : "destructive"}
