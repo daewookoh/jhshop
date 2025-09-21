@@ -5,7 +5,12 @@ interface OrderData {
   nickname: string
   orderText: string
   notes?: string
-  products?: string[]
+  products?: string[] | {
+    name: string;
+    quantity: number;
+    price: number;
+    total: number;
+  }[]
 }
 
 interface Product {
@@ -258,9 +263,31 @@ export async function POST(request: NextRequest) {
           // 비고
           row.push(order.notes || '')
           
-          // 상품별 주문 수량 (현재는 빈 문자열로 설정)
-          sortedProducts.forEach(() => {
-            row.push('')
+          // 상품별 주문 수량 처리
+          sortedProducts.forEach(product => {
+            // AI 분석된 상품 정보가 있는지 확인
+            if (order.products && Array.isArray(order.products) && order.products.length > 0) {
+              // AI 분석된 상품 정보인지 확인 (객체 형태)
+              const isAnalyzedProduct = typeof order.products[0] === 'object' && 'quantity' in order.products[0]
+              
+              if (isAnalyzedProduct) {
+                // AI 분석된 상품 정보에서 해당 상품의 수량 찾기
+                const analyzedProduct = (order.products as any[]).find(p => 
+                  p.name && p.name.replace(/\n/g, ' ').replace(/\s+/g, ' ').trim() === product.name.replace(/\n/g, ' ').replace(/\s+/g, ' ').trim()
+                )
+                
+                if (analyzedProduct) {
+                  row.push(analyzedProduct.quantity.toString())
+                } else {
+                  row.push('')
+                }
+              } else {
+                // 기존 방식 (문자열 배열)
+                row.push('')
+              }
+            } else {
+              row.push('')
+            }
           })
           
           rows.push(row)

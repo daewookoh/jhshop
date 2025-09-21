@@ -31,6 +31,7 @@ interface GroupedOrder {
 interface ProcessedOrder {
   nickname: string;
   orderTime: string;
+  orderText: string;
   products: {
     name: string;
     quantity: number;
@@ -263,7 +264,7 @@ export function OrderUpload() {
     
 
     const openai = new OpenAI({
-      apiKey: "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",
+      apiKey: process.env.NEXT_PUBLIC_OPENAI_API_KEY,
       dangerouslyAllowBrowser: true
     });
 
@@ -674,6 +675,14 @@ JSON 형식:
       const processedOrders: ProcessedOrder[] = parsed.orders.map((orderData: any) => {
         const totalAmount = orderData.products.reduce((sum: number, p: any) => sum + p.total, 0);
         
+        // 그룹화된 주문에서 원본 텍스트 찾기
+        const groupedOrder = groupedOrders.find(g => 
+          g.nickname === orderData.nickname || 
+          g.nickname.includes(orderData.nickname) || 
+          orderData.nickname.includes(g.nickname)
+        );
+        const orderText = groupedOrder?.combinedText || orderData.orderText || '';
+        
         // 원본 텍스트가 누락된 경우 그룹화된 주문에서 복원 및 가격 검증
         const productsWithOriginalText = orderData.products.map((product: any) => {
           // AI가 반환한 상품명을 DB의 정확한 상품명으로 매핑
@@ -734,6 +743,7 @@ JSON 형식:
         return {
           nickname: orderData.nickname,
           orderTime: orderData.orderTime,
+          orderText: orderData.orderText || '',
           products: productsWithOriginalText,
           totalAmount
         };
@@ -837,6 +847,14 @@ JSON 형식:
       const processedOrders: ProcessedOrder[] = parsed.orders.map((orderData: any) => {
         const totalAmount = orderData.products.reduce((sum: number, p: any) => sum + p.total, 0);
         
+        // 그룹화된 주문에서 원본 텍스트 찾기
+        const groupedOrder = groupedOrders.find(g => 
+          g.nickname === orderData.nickname || 
+          g.nickname.includes(orderData.nickname) || 
+          orderData.nickname.includes(g.nickname)
+        );
+        const orderText = groupedOrder?.combinedText || orderData.orderText || '';
+        
         // 원본 텍스트가 누락된 경우 그룹화된 주문에서 복원 및 가격 검증
         const productsWithOriginalText = orderData.products.map((product: any) => {
           // AI가 반환한 상품명을 DB의 정확한 상품명으로 매핑
@@ -897,6 +915,7 @@ JSON 형식:
         return {
           nickname: orderData.nickname,
           orderTime: orderData.orderTime,
+          orderText: orderData.orderText || '',
           products: productsWithOriginalText,
           totalAmount
         };
@@ -1053,32 +1072,7 @@ JSON 형식:
 
       setCurrentStep("AI로 주문내역 분석 중...");
       
-      // 주문 분석 완료 후 자동으로 스프레드시트에 등록
-      try {
-        setCurrentStep("구글 스프레드시트에 등록 중...");
-        
-        // 주문 데이터를 Google Sheets 형식으로 변환
-        const orderData = orders.map(order => ({
-          nickname: order.nickname,
-          orderText: order.orderText,
-          notes: '',
-          products: []
-        }));
-        
-        // Google Sheets에 작성
-        await writeOrdersToSheet(date, orderData, products);
-        toast.success("구글 스프레드시트에 성공적으로 등록되었습니다!");
-        
-      } catch (spreadsheetError) {
-        console.error("구글 스프레드시트 작성 실패:", spreadsheetError);
-        toast.error(`구글 스프레드시트 작성 실패: ${spreadsheetError instanceof Error ? spreadsheetError.message : '알 수 없는 오류'}`);
-      }
-      setProgress(100); // 파싱 완료
-      setCurrentStep("완료!");
-      toast.success(`${orders.length}명의 주문이 스프레드시트에 등록되었습니다.`);
-      
-      // AI 분석 기능 비활성화
-      /*
+      // AI 분석 기능 활성화
       try {
         const processed = await processOrdersWithAI(orders);
         console.log('AI 분석 결과:', processed);
@@ -1087,7 +1081,7 @@ JSON 형식:
 
         setProgress(100);
         setCurrentStep("완료!");
-        toast.success(`${processed.length}건의 주문이 분석되었습니다.`);
+        toast.success(`${processed.length}건의 주문이 AI로 분석되었습니다.`);
       } catch (aiError) {
         // AI 분석 실패 시 처리
         console.error("AI 분석 실패:", aiError);
@@ -1097,7 +1091,6 @@ JSON 형식:
         setError(`AI 분석 실패: ${aiError instanceof Error ? aiError.message : '알 수 없는 오류'}`);
         // 에러 메시지는 processOrdersWithAI에서 이미 표시됨
       }
-      */
 
     } catch (error) {
       console.error("업로드 처리 실패:", error);
@@ -1144,6 +1137,48 @@ JSON 형식:
     setCompletedBatches(0);
   };
 
+  const handleSaveToGoogleSheets = async () => {
+    if (processedOrders.length === 0) {
+      toast.error("저장할 주문내역이 없습니다.");
+      return;
+    }
+
+    try {
+      setCurrentStep("구글 스프레드시트에 등록 중...");
+      setIsProcessing(true);
+      setProgress(0);
+
+      // AI 분석된 주문 데이터를 Google Sheets 형식으로 변환
+      const orderData = processedOrders.map(order => ({
+        nickname: order.nickname,
+        orderText: order.orderText,
+        notes: '',
+        products: order.products.map(product => ({
+          name: product.name,
+          quantity: product.quantity,
+          price: product.price,
+          total: product.total
+        }))
+      }));
+      
+      // Google Sheets에 작성 (AI 분석된 수량 포함)
+      await writeOrdersToSheet(date, orderData, products);
+      toast.success("구글 스프레드시트에 AI 분석 결과가 성공적으로 등록되었습니다!");
+      
+      setProgress(100);
+      setCurrentStep("구글시트 등록 완료!");
+      
+    } catch (spreadsheetError) {
+      console.error("구글 스프레드시트 작성 실패:", spreadsheetError);
+      toast.error(`구글 스프레드시트 작성 실패: ${spreadsheetError instanceof Error ? spreadsheetError.message : '알 수 없는 오류'}`);
+      setCurrentStep("구글시트 등록 실패");
+      setIsError(true);
+      setError(`구글 스프레드시트 작성 실패: ${spreadsheetError instanceof Error ? spreadsheetError.message : '알 수 없는 오류'}`);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
 
   const isDateValid = !date || /^\d{6}$/.test(date); // 날짜가 없거나 유효한 경우
   const canUpload = file && !isProcessing;
@@ -1165,14 +1200,6 @@ JSON 형식:
             </Alert>
           )}
           
-          {!isAIDisabled && !hasOpenAIKey && (
-            <Alert>
-              <AlertCircle className="h-4 w-4" />
-              <AlertDescription>
-                OpenAI API 키가 설정되지 않았습니다. AI 분석 기능을 사용하려면 환경변수 VITE_OPENAI_API_KEY를 설정하세요.
-              </AlertDescription>
-            </Alert>
-          )}
 
           {/* 업로드 설정 */}
           <Card>
@@ -1260,7 +1287,7 @@ JSON 형식:
               {isProcessing 
                 ? "분석 중..." 
                 : file 
-                  ? "주문내역 분석 & 구글시트 등록" 
+                  ? "주문내역 AI 분석" 
                   : "파일을 먼저 선택해주세요"
               }
             </Button>
@@ -1625,6 +1652,13 @@ JSON 형식:
           {/* 액션 버튼들 - AI 기능이 활성화되었을 때만 표시 */}
           {!isAIDisabled && processedOrders.length > 0 && !isProcessing && (
             <div className="flex gap-4 justify-center">
+              <Button
+                onClick={handleSaveToGoogleSheets}
+                className="bg-green-600 hover:bg-green-700 text-white flex items-center gap-2"
+              >
+                <CheckCircle className="h-4 w-4" />
+                구글시트 등록
+              </Button>
               <Button
                 onClick={handleSaveToDatabase}
                 className="bg-gradient-accent hover:bg-gradient-accent/90 flex items-center gap-2"

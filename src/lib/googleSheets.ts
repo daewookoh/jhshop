@@ -3,7 +3,12 @@ interface OrderData {
   nickname: string;
   orderText: string;
   notes?: string;
-  products?: string[];
+  products?: string[] | {
+    name: string;
+    quantity: number;
+    price: number;
+    total: number;
+  }[];
 }
 
 interface Product {
