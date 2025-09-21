@@ -231,9 +231,27 @@ export function OrderUpload() {
   const MAX_PROMPT_LENGTH = 15000; // 약 15KB
   const BATCH_SIZE = 20; // 한 번에 처리할 주문 그룹 수
 
+  // 시간 정보를 제거하는 함수
+  const removeTimeFromOrderText = (text: string): string => {
+    // [오전/오후 시간:분] 패턴을 제거
+    return text.replace(/\[오[전후]\s+\d+:\d+\]\s*/g, '').trim();
+  };
+
   // 통일된 AI 프롬프트 템플릿
   const getAIPrompt = (productList: string, ordersText: string, isBatch: boolean = false) => {
     const batchWarning = isBatch ? "\n⚠️ 중요: 위 주문 목록에 있는 모든 닉네임의 주문을 반드시 분석해야 합니다. 누락이 있어서는 안됩니다!\n" : "";
+    
+    // 주문 텍스트에서 시간 정보 제거
+    const cleanedOrdersText = ordersText.split('\n').map(line => {
+      // [닉네임] 부분은 유지하고, 그 뒤의 시간 정보만 제거
+      const match = line.match(/^(\d+\.\s*\[[^\]]+\])\s*(.*)$/);
+      if (match) {
+        const [, nicknamePart, orderContent] = match;
+        const cleanedContent = removeTimeFromOrderText(orderContent);
+        return `${nicknamePart} ${cleanedContent}`;
+      }
+      return line;
+    }).join('\n');
     
     return `당신은 카카오톡 주문 메시지 분석 전문가입니다.
 
@@ -241,7 +259,7 @@ export function OrderUpload() {
 ${productList}
 
 === 주문 목록 (같은 닉네임은 하나로 합쳐짐) ===
-${ordersText}
+${cleanedOrdersText}
 
 === 분석 규칙 ===
 1. 같은 닉네임의 모든 주문을 하나의 주문내역으로 처리

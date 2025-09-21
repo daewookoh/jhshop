@@ -222,7 +222,7 @@ export async function POST(request: NextRequest) {
       const secondRow = ['', '', '', ...saleDates]
       
       // 세번째 줄: 판매가 (3A 셀에 "판매가" 제목 추가)
-      const prices = sortedProducts.map(p => p.price ? p.price.toString() : '')
+      const prices = sortedProducts.map(p => p.price || '')
       const thirdRow = ['판매가', '', '', ...prices]
       
       // 네번째 줄: 재고 (4A 셀에 "재고" 제목 추가)
@@ -338,7 +338,8 @@ export async function POST(request: NextRequest) {
                 })
                 
                 if (analyzedProduct) {
-                  row.push(analyzedProduct.quantity.toString())
+                  // 숫자로 변환하여 구글시트에서 숫자로 인식되도록 함
+                  row.push(analyzedProduct.quantity)
                 } else {
                   console.log(`상품 매칭 실패: "${product.name}" (닉네임: ${order.nickname})`);
                   row.push('')
