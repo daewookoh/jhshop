@@ -394,11 +394,11 @@ export async function POST(request: NextRequest) {
     // 모든 데이터를 스프레드시트에 작성 (헤더 + 총주문수 + 주문데이터 + 총주문수 + 총판매액)
     const allData = [...headerRows, totalOrderRow, ...orderRows, totalOrderRow, totalSalesDataRow]
     
-    // 데이터 작성 (줄바꿈 처리를 위해 RAW 사용, 수식은 별도로 처리)
+    // 데이터 작성 (숫자 인식을 위해 USER_ENTERED 사용)
     await sheets.spreadsheets.values.update({
       spreadsheetId: SPREADSHEET_ID,
       range: `${sheetName}!A1`,
-      valueInputOption: 'RAW',
+      valueInputOption: 'USER_ENTERED',
       requestBody: {
         values: allData
       }
