@@ -5,6 +5,8 @@ import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 import type { Tables } from '@/integrations/supabase/types';
 
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://rmyeyouheztcvepjleah.supabase.co";
+
 type Profile = Tables<'profiles'>;
 
 interface AuthContextType {
@@ -341,10 +343,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Get initial session
     const initializeAuth = async () => {
       try {
+        console.log('Initializing auth with URL:', SUPABASE_URL);
         const { data: { session }, error } = await supabase.auth.getSession();
         if (error) {
           console.error('Error getting session:', error);
           setLoading(false);
+          setInitialized(true);
+          setFallbackMode(true);
           return;
         }
         
@@ -408,6 +413,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setLoading(false);
         setInitialized(true);
         setFallbackMode(true);
+        
+        // Fallback profile 설정
+        setProfile({
+          id: 'fallback-user',
+          user_id: 'fallback-user',
+          email: 'fallback@example.com',
+          display_name: 'Fallback User',
+          role: 'user',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        });
       }
     };
 
