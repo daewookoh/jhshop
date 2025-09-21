@@ -2,6 +2,7 @@
 
 import { ProtectedRoute } from '@/components/ProtectedRoute'
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { FloatingButton } from "@/components/ui/floating-button";
@@ -15,6 +16,7 @@ import { useProducts, Product } from "@/hooks/useProducts";
 import { useAuth } from "@/contexts/AuthContext";
 
 export default function Home() {
+  const router = useRouter();
   const { user, profile, signOut, isManagerOrAdmin, isAdmin, loading, initialized, fallbackMode } = useAuth();
   const { products, loading: productsLoading, addProduct, updateProduct, deleteProduct, uploadImage } = useProducts();
   const [activeTab, setActiveTab] = useState(() => {
@@ -140,7 +142,9 @@ export default function Home() {
     try {
       await signOut();
       toast.success("로그아웃되었습니다.");
+      // 페이지 새로고침 없이 상태 변경으로 처리
     } catch (error) {
+      console.error('Sign out error:', error);
       toast.error("로그아웃에 실패했습니다.");
     }
   };
@@ -152,7 +156,7 @@ export default function Home() {
     }
   }, [activeTab]);
 
-  if ((!profile || loading) && initialized) {
+  if ((!profile || loading) && initialized && user) {
     return (
       <div className="min-h-screen bg-background">
         {/* Header with logout button even during loading */}
@@ -184,6 +188,18 @@ export default function Home() {
         </div>
       </div>
     );
+  }
+
+  // Redirect to login page if user is not authenticated
+  useEffect(() => {
+    if (initialized && !user) {
+      router.push('/auth');
+    }
+  }, [initialized, user, router]);
+
+  // Show nothing while redirecting
+  if (initialized && !user) {
+    return null;
   }
 
   // Show access denied for regular users (hidden)

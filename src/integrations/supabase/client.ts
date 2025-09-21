@@ -14,6 +14,7 @@ export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABL
     persistSession: true,
     autoRefreshToken: true,
     detectSessionInUrl: true,
+    flowType: 'pkce', // PKCE 플로우 사용으로 보안 강화
   },
   global: {
     headers: {

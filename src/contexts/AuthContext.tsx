@@ -332,6 +332,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setSession(null);
           setUser(null);
           setProfile(null);
+          setLoading(false); // 로딩 상태를 false로 설정
+          setInitialized(true); // 초기화 완료로 설정
+          
+          // 로컬 스토리지 정리
+          if (typeof window !== 'undefined') {
+            try {
+              Object.keys(localStorage).forEach(key => {
+                if (key.startsWith('sb-') || key.includes('supabase')) {
+                  localStorage.removeItem(key);
+                }
+              });
+            } catch (error) {
+              console.warn('Error clearing localStorage during sign out:', error);
+            }
+          }
         }
         
         console.log('Setting loading to false and marking as initialized');
@@ -470,7 +485,54 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const signOut = async () => {
-    await supabase.auth.signOut();
+    try {
+      console.log('Starting sign out process...');
+      
+      // 먼저 로컬 상태를 즉시 초기화
+      setUser(null);
+      setSession(null);
+      setProfile(null);
+      setLoading(false);
+      setInitialized(true);
+      setFallbackMode(false); // fallback 모드도 해제
+      lastProcessedUserId.current = null;
+      backgroundFetchRef.current = false;
+      
+      // Supabase 로그아웃 시도 (에러가 발생해도 무시)
+      try {
+        await supabase.auth.signOut();
+        console.log('Supabase sign out successful');
+      } catch (error) {
+        console.warn('Supabase sign out failed, but continuing with local cleanup:', error);
+        // Supabase 로그아웃이 실패해도 로컬 상태는 이미 초기화됨
+      }
+      
+      // 로컬 스토리지 정리
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.removeItem('sb-rmyeyouheztcvepjleah-auth-token');
+          localStorage.removeItem('supabase.auth.token');
+          // 기타 Supabase 관련 로컬 스토리지 항목들 정리
+          Object.keys(localStorage).forEach(key => {
+            if (key.startsWith('sb-') || key.includes('supabase')) {
+              localStorage.removeItem(key);
+            }
+          });
+        } catch (error) {
+          console.warn('Error clearing localStorage:', error);
+        }
+      }
+      
+      console.log('Sign out process completed');
+    } catch (error) {
+      console.error('Error during sign out:', error);
+      // 에러가 발생해도 로컬 상태는 초기화
+      setUser(null);
+      setSession(null);
+      setProfile(null);
+      setLoading(false);
+      setInitialized(true);
+    }
   };
 
   const hasRole = (role: Profile['role']) => {
