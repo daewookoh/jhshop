@@ -90,64 +90,61 @@ export function OrderUpload() {
     const lines = fileContent.split('\n');
     const orders: ParsedOrder[] = [];
     const orderGroups: Record<string, { messages: { text: string; time: string }[]; firstTime: string; lastTime: string }> = {};
-    let currentDate = '';
-    let totalOrderCount = 0; // 실제 주문 건수 카운트
+    let totalOrderCount = 0;
     
     for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-      const trimmedLine = line.trim();
+      const line = lines[i].trim();
       
-      // 날짜 패턴 찾기 (예: "2024. 1. 15. 오전 6:46")
-      const datePattern = /^(\d{4})\.\s*(\d{1,2})\.\s*(\d{1,2})\.\s*(.+)$/;
-      const dateMatch = trimmedLine.match(datePattern);
-      if (dateMatch) {
-        currentDate = `${dateMatch[1]}-${dateMatch[2].padStart(2, '0')}-${dateMatch[3].padStart(2, '0')}`;
+      // - 로 시작하는 라인은 모두 삭제
+      if (line.startsWith('-')) {
         continue;
       }
       
-      // 주문 메시지 패턴 찾기: [닉네임] [시간] 주문내용
-      const orderPatterns = [
-        /^\[([^\]]+)\]\s*\[([^\]]+)\]\s*(.+)$/,
-        /^\[([^\]]+)\]\s*\[([^\]]+)\]\s*(.+)/,
-        /\[([^\]]+)\]\s*\[([^\]]+)\]\s*(.+)/,
-        /^\[([^\]]+)\]\s*\[([^\]]+)\]\s*(.+)$/,
-        /^\[([^\]]+)\]\s*\[([^\]]+)\]\s*(.+)/,
-        /\[([^\]]+)\]\s*\[([^\]]+)\]\s*(.+)/
-      ];
-      
-      let orderMatch = null;
-      for (const pattern of orderPatterns) {
-        orderMatch = trimmedLine.match(pattern);
-        if (orderMatch) break;
+      // [ 로 시작하는 줄만 파싱
+      if (!line.startsWith('[')) {
+        continue;
       }
       
-      if (orderMatch) {
-        const [, nickname, time, orderText] = orderMatch;
+      // [닉네임] [시간] 패턴 찾기
+      const orderPattern = /^\[([^\]]+)\]\s*\[([^\]]+)\]\s*(.*)$/;
+      const match = line.match(orderPattern);
+      
+      if (match) {
+        const [, nickname, time, orderText] = match;
         const trimmedNickname = nickname.trim();
         
-        // 과실당의 주문은 스킵
+        // [과실당] 으로 시작하는 줄의 내용은 패스
         if (trimmedNickname.includes('과실당')) {
           continue;
         }
         
-        // 주문내용이 있는 경우만 추가
+        // 주문내용이 있는 경우만 처리
         if (orderText && orderText.trim().length > 0) {
-          // 여러 줄에 걸친 주문 내용 처리
           let fullOrderText = orderText.trim();
           
-          // 다음 줄들을 확인하여 주문 내용이 계속되는지 확인
+          // 다음 [가 나올때까지 줄바꿈은 " " 로 치환
           let j = i + 1;
           while (j < lines.length) {
             const nextLine = lines[j].trim();
             
-            // 다음 줄이 비어있거나 날짜 패턴이거나 새로운 주문 패턴이면 중단
-            if (!nextLine || 
-                nextLine.match(datePattern) || 
-                nextLine.match(/^\[([^\]]+)\]\s*\[([^\]]+)\]/)) {
+            // 다음 [가 나오면 중단
+            if (nextLine.startsWith('[')) {
               break;
             }
             
-            // 다음 줄이 주문 내용의 연속인 경우 추가
+            // - 로 시작하는 라인은 스킵
+            if (nextLine.startsWith('-')) {
+              j++;
+              continue;
+            }
+            
+            // 빈 라인은 스킵
+            if (!nextLine) {
+              j++;
+              continue;
+            }
+            
+            // 줄바꿈을 공백으로 치환
             fullOrderText += ' ' + nextLine;
             j++;
           }
@@ -170,28 +167,25 @@ export function OrderUpload() {
           });
           orderGroups[trimmedNickname].lastTime = time.trim();
           
-          // 실제 주문 건수 카운트 (주문시간 기준)
           totalOrderCount++;
-          
         }
       }
     }
     
-    // 그룹화된 주문들을 하나의 주문으로 합치기
+    // 그룹화된 주문들을 결과 형식으로 변환
     Object.entries(orderGroups).forEach(([nickname, group]) => {
-      // 시간과 메시지를 함께 포함하여 통합
-      const combinedOrderText = group.messages
-        .map(msg => `[${msg.time}] ${msg.text}`)
-        .join('\n');
+      // 각 메시지를 [시간] 내용 형식으로 변환
+      const formattedMessages = group.messages.map(msg => {
+        return `[${msg.time}] ${msg.text}`;
+      });
       
-      const fullDateTime = currentDate ? `${currentDate} ${group.firstTime}` : group.firstTime;
+      const combinedOrderText = formattedMessages.join('\n');
       
       orders.push({
         nickname: nickname,
-        orderTime: fullDateTime,
+        orderTime: group.firstTime,
         orderText: combinedOrderText
       });
-      
     });
     
     return { orders, totalOrderCount };
@@ -212,18 +206,10 @@ export function OrderUpload() {
         // txt 파일에서 파싱한 순서대로 유지 (정렬하지 않음)
         const sortedOrderList = orderList;
         
-        // 모든 주문 텍스트를 합치기 (줄바꿈 제거)
+        // 모든 주문 텍스트를 합치기 (이미 파싱에서 올바른 형식으로 처리됨)
         const combinedText = sortedOrderList.map(order => {
-          // 날짜 형식 변환: "2024-01-15 오전 11:45" → "오전 11:45"
-          let displayTime = order.orderTime;
-          if (order.orderTime.includes('-')) {
-            const parts = order.orderTime.split(' ');
-            if (parts.length >= 2) {
-              displayTime = parts.slice(1).join(' ');
-            }
-          }
-          return `[${displayTime}] ${order.orderText.replace(/\n/g, ' ')}`;
-        }).join(' ');
+          return order.orderText;
+        }).join('\n');
         
         // 가장 최근 주문 시간 찾기
         const latestOrderTime = sortedOrderList.reduce((latest, order) => {
@@ -244,6 +230,89 @@ export function OrderUpload() {
   // 배치 크기 설정 (프롬프트 길이 제한)
   const MAX_PROMPT_LENGTH = 15000; // 약 15KB
   const BATCH_SIZE = 20; // 한 번에 처리할 주문 그룹 수
+
+  // 통일된 AI 프롬프트 템플릿
+  const getAIPrompt = (productList: string, ordersText: string, isBatch: boolean = false) => {
+    const batchWarning = isBatch ? "\n⚠️ 중요: 위 주문 목록에 있는 모든 닉네임의 주문을 반드시 분석해야 합니다. 누락이 있어서는 안됩니다!\n" : "";
+    
+    return `당신은 카카오톡 주문 메시지 분석 전문가입니다.
+
+=== 상품 목록 ===
+${productList}
+
+=== 주문 목록 (같은 닉네임은 하나로 합쳐짐) ===
+${ordersText}
+
+=== 분석 규칙 ===
+1. 같은 닉네임의 모든 주문을 하나의 주문내역으로 처리
+2. 각 주문에서 상품명과 수량을 정확히 추출
+3. 상품명 매칭 규칙:
+   - 정확히 일치하지 않더라도 유사한 상품을 찾아 매핑하세요
+   - "방할머니 파김치" → "방할머니 파김치 1팩(1키로)" 매칭 가능
+   - "편육" → "흙돼지편육2팩" 매칭 가능
+   - 상품명의 핵심 키워드를 기준으로 매칭하세요
+   - 상품 목록에서 가장 유사한 상품을 찾아 매핑하세요
+   - 상품명은 반드시 위 상품 목록에 있는 정확한 이름을 사용 (예: "곱창전골도 1팩 추가할게용" → "곱창전골")
+4. 수량 추출 규칙 (매우 중요 - 반드시 정확히 계산하세요):
+   
+   **편육 관련 특별 규칙:**
+   - "편육 2팩" → quantity: 1 (흙돼지편육2팩 상품 1개 주문)
+   - "편육 4팩" → quantity: 2 (흙돼지편육2팩 상품 2개 주문)
+   - "편육 6팩" → quantity: 3 (흙돼지편육2팩 상품 3개 주문)
+   - "편육 8팩" → quantity: 4 (흙돼지편육2팩 상품 4개 주문)
+   - 계산 공식: 주문팩수 ÷ 상품팩수 = 주문수량 (예: 4팩 ÷ 2팩 = 2개)
+   
+   **일반 상품 규칙:**
+   - "방할머니 파김치 2키로" → quantity: 2 (1키로 상품을 2개 주문)
+   - "사과 3개" → quantity: 3
+   - "닭발 1팩" → quantity: 1
+   - "A2팩" → quantity: 1 (상품명에 숫자가 포함되어 있어도 주문 수량은 1개)
+   - "B3팩 2개" → quantity: 2 (명시된 수량이 있으면 그 수량 사용)
+   
+   **핵심 원칙:**
+   - 상품명에 포함된 수량과 주문 수량을 명확히 구분하세요
+   - 주문에서 요청한 총 수량을 상품의 단위로 나누어 계산하세요
+   - 숫자 + 단위(팩, 개, 키로, kg 등) 패턴을 정확히 인식하세요
+   - 상품명 자체에 숫자가 포함된 경우와 주문 수량을 구분하세요
+5. 가격은 반드시 상품 목록에서 해당 상품의 정확한 가격을 사용 (절대 0원이면 안됨)
+6. 유사도는 0.0~1.0으로 평가 (1.0=완전일치)
+7. 매핑 불가능한 주문도 최대한 상품을 찾아서 매핑하세요. 빈 products 배열은 최후의 수단입니다.
+8. originalText는 각 상품별로 해당 상품과 관련된 원본 텍스트 부분을 저장 (줄바꿈 제거)
+9. 모든 원본 주문 텍스트는 절대 누락되어서는 안 됨
+10. 가격이 0원인 경우는 절대 허용되지 않음 - 반드시 상품 목록에서 정확한 가격을 찾아서 사용
+11. 예외 처리: 만약 목록에 없는 상품을 주문하거나, 수량이 불분명하면 'error' 필드에 이유를 적어줘${batchWarning}
+
+=== 수량 추출 예시 ===
+- "편육 2팩" → quantity: 1 (흙돼지편육2팩 상품 1개)
+- "편육 4팩" → quantity: 2 (흙돼지편육2팩 상품 2개)
+- "사과 3개" → quantity: 3  
+- "닭발 1팩" → quantity: 1
+- "곱창전골도 1팩 추가할게용" → quantity: 1
+- "무뼈닭발 2팩" → quantity: 2
+
+=== 응답 형식 ===
+반드시 유효한 JSON 형식으로만 응답하세요. 다른 텍스트나 설명은 포함하지 마세요.
+
+{
+  "orders": [
+    {
+      "nickname": "닉네임",
+      "orderTime": "가장 최근 주문시간",
+      "orderText": "원본 주문 텍스트 전체",
+      "products": [
+        {
+          "name": "상품명",
+          "quantity": 수량,
+          "price": 가격,
+          "total": 총가격,
+          "similarity": 유사도,
+          "originalText": "모든 원본텍스트 합친 것 (줄바꿈 제거)"
+        }
+      ]
+    }
+  ]
+}`;
+  };
 
   const processOrdersWithAI = async (orders: ParsedOrder[]): Promise<ProcessedOrder[]> => {
     
@@ -321,54 +390,7 @@ export function OrderUpload() {
     ).join('\n');
     
 
-    const prompt = `당신은 카카오톡 주문 메시지 분석 전문가입니다.
-
-=== 상품 목록 ===
-${productList}
-
-=== 주문 목록 (같은 닉네임은 하나로 합쳐짐) ===
-${ordersText}
-
-=== 분석 규칙 ===
-1. 같은 닉네임의 모든 주문을 하나의 주문내역으로 처리
-2. 각 주문에서 상품명과 수량을 정확히 추출
-3. 상품명은 반드시 위 상품 목록에 있는 정확한 이름을 사용 (예: "곱창전골도 1팩 추가할게용" → "곱창전골")
-4. 수량 추출 규칙:
-   - "편육 2팩" → 수량: 2개
-   - "사과 3개" → 수량: 3개  
-   - "닭발 1팩" → 수량: 1개
-   - "곱창전골도 1팩 추가할게용" → 수량: 1개
-   - 수량이 명시되지 않으면 1개로 설정
-   - 숫자 + 단위(팩, 개, 키로, kg 등) 패턴을 정확히 인식
-5. 가격은 반드시 상품 목록에서 해당 상품의 정확한 가격을 사용 (절대 0원이면 안됨)
-6. 유사도는 0.0~1.0으로 평가 (1.0=완전일치)
-7. 매핑 불가능한 주문도 최대한 상품을 찾아서 매핑하세요. 빈 products 배열은 최후의 수단입니다.
-8. originalText는 각 상품별로 해당 상품과 관련된 원본 텍스트 부분을 저장 (줄바꿈 제거)
-9. 모든 원본 주문 텍스트는 절대 누락되어서는 안 됨
-10. 가격이 0원인 경우는 절대 허용되지 않음 - 반드시 상품 목록에서 정확한 가격을 찾아서 사용
-11. 예외 처리: 만약 목록에 없는 상품을 주문하거나, 수량이 불분명하면 'error' 필드에 이유를 적어줘
-
-=== 응답 형식 ===
-반드시 유효한 JSON 형식으로만 응답하세요. 다른 텍스트나 설명은 포함하지 마세요.
-
-{
-  "orders": [
-    {
-      "nickname": "닉네임",
-      "orderTime": "가장 최근 주문시간",
-      "products": [
-        {
-          "name": "상품명",
-          "quantity": 수량,
-          "price": 가격,
-          "total": 총가격,
-          "similarity": 유사도,
-          "originalText": "모든 원본텍스트 합친 것 (줄바꿈 제거)"
-        }
-      ]
-    }
-  ]
-}`;
+    const prompt = getAIPrompt(productList, ordersText, false);
 
     const result = await callOpenAIHybrid(openai, prompt, groupedOrders.length, groupedOrders, activeProducts);
     
@@ -410,63 +432,7 @@ ${ordersText}
         `${index + 1}. [${group.nickname}] ${group.combinedText}`
       ).join('\n');
 
-      const prompt = `당신은 카카오톡 주문 메시지 분석 전문가입니다.
-
-=== 상품 목록 ===
-${productList}
-
-=== 주문 목록 (같은 닉네임은 하나로 합쳐짐) ===
-${ordersText}
-
-=== 분석 규칙 ===
-1. 같은 닉네임의 모든 주문을 하나의 주문내역으로 처리
-2. 각 주문에서 상품명과 수량을 정확히 추출
-3. 상품명은 반드시 위 상품 목록에 있는 정확한 이름을 사용 (예: "곱창전골도 1팩 추가할게용" → "곱창전골")
-4. 수량 추출 규칙:
-   - "편육 2팩" → 수량: 2개
-   - "사과 3개" → 수량: 3개  
-   - "닭발 1팩" → 수량: 1개
-   - "곱창전골도 1팩 추가할게용" → 수량: 1개
-   - 수량이 명시되지 않으면 1개로 설정
-   - 숫자 + 단위(팩, 개, 키로, kg 등) 패턴을 정확히 인식
-5. 가격은 반드시 상품 목록에서 해당 상품의 정확한 가격을 사용 (절대 0원이면 안됨)
-6. 유사도는 0.0~1.0으로 평가 (1.0=완전일치)
-7. 매핑 불가능한 주문도 최대한 상품을 찾아서 매핑하세요. 빈 products 배열은 최후의 수단입니다.
-8. originalText는 각 상품별로 해당 상품과 관련된 원본 텍스트 부분을 저장 (줄바꿈 제거)
-9. 모든 원본 주문 텍스트는 절대 누락되어서는 안 됨
-10. 가격이 0원인 경우는 절대 허용되지 않음 - 반드시 상품 목록에서 정확한 가격을 찾아서 사용
-11. 예외 처리: 만약 목록에 없는 상품을 주문하거나, 수량이 불분명하면 'error' 필드에 이유를 적어줘
-
-⚠️ 중요: 위 주문 목록에 있는 모든 닉네임의 주문을 반드시 분석해야 합니다. 누락이 있어서는 안됩니다!
-
-=== 수량 추출 예시 ===
-- "편육 2팩" → quantity: 2
-- "사과 3개" → quantity: 3  
-- "닭발 1팩" → quantity: 1
-- "곱창전골도 1팩 추가할게용" → quantity: 1
-- "무뼈닭발 2팩" → quantity: 2
-
-=== 응답 형식 ===
-반드시 유효한 JSON 형식으로만 응답하세요. 다른 텍스트나 설명은 포함하지 마세요.
-
-{
-  "orders": [
-    {
-      "nickname": "닉네임",
-      "orderTime": "가장 최근 주문시간",
-      "products": [
-        {
-          "name": "상품명",
-          "quantity": 수량,
-          "price": 가격,
-          "total": 총가격,
-          "similarity": 유사도,
-          "originalText": "모든 원본텍스트 합친 것 (줄바꿈 제거)"
-        }
-      ]
-    }
-  ]
-}`;
+      const prompt = getAIPrompt(productList, ordersText, true);
 
       try {
         const batchResult = await callOpenAIHybrid(openai, prompt, batch.length, groupedOrders, activeProducts);
@@ -597,66 +563,6 @@ ${ordersText}
       model: "gpt-4o-mini",
       messages: [
         {
-          role: "system",
-          content: `당신은 카카오톡 주문 메시지를 분석하여 상품 목록과 매핑하는 전문가입니다.
-
-중요한 규칙:
-1. 원본 주문내역에 있는 모든 주문을 반드시 분석해야 합니다. 누락이 절대 있어서는 안됩니다.
-
-2. 상품명 매칭 규칙:
-   - 정확히 일치하지 않더라도 유사한 상품을 찾아 매핑하세요
-   - "방할머니 파김치" → "방할머니 파김치 1팩(1키로)" 매칭 가능
-   - "편육" → "흙돼지편육2팩" 매칭 가능
-   - 상품명의 핵심 키워드를 기준으로 매칭하세요
-   - 상품 목록에서 가장 유사한 상품을 찾아 매핑하세요
-
-3. 수량 추출 규칙 (매우 중요 - 반드시 정확히 계산하세요):
-   
-   **편육 관련 특별 규칙:**
-   - "편육 2팩" → quantity: 1 (흙돼지편육2팩 상품 1개 주문)
-   - "편육 4팩" → quantity: 2 (흙돼지편육2팩 상품 2개 주문)
-   - "편육 6팩" → quantity: 3 (흙돼지편육2팩 상품 3개 주문)
-   - "편육 8팩" → quantity: 4 (흙돼지편육2팩 상품 4개 주문)
-   - 계산 공식: 주문팩수 ÷ 상품팩수 = 주문수량 (예: 4팩 ÷ 2팩 = 2개)
-   
-   **일반 상품 규칙:**
-   - "방할머니 파김치 2키로" → quantity: 2 (1키로 상품을 2개 주문)
-   - "사과 3개" → quantity: 3
-   - "닭발 1팩" → quantity: 1
-   - "A2팩" → quantity: 1 (상품명에 숫자가 포함되어 있어도 주문 수량은 1개)
-   - "B3팩 2개" → quantity: 2 (명시된 수량이 있으면 그 수량 사용)
-   
-   **핵심 원칙:**
-   - 상품명에 포함된 수량과 주문 수량을 명확히 구분하세요
-   - 주문에서 요청한 총 수량을 상품의 단위로 나누어 계산하세요
-   - 숫자 + 단위(팩, 개, 키로, kg 등) 패턴을 정확히 인식하세요
-   - 상품명 자체에 숫자가 포함된 경우와 주문 수량을 구분하세요
-
-4. 가격은 반드시 상품 목록에서 해당 상품의 정확한 가격을 사용 (절대 0원이면 안됨)
-5. originalText에는 해당 주문의 원본 텍스트를 그대로 포함하세요.
-6. 반드시 유효한 JSON 형식으로만 응답하세요.
-
-JSON 형식:
-{
-  "orders": [
-    {
-      "nickname": "닉네임",
-      "orderTime": "시간",
-      "products": [
-        {
-          "name": "상품명",
-          "quantity": 수량,
-          "price": 가격,
-          "total": 총액,
-          "similarity": 유사도(0-1),
-          "originalText": "원본 주문 텍스트"
-        }
-      ]
-    }
-  ]
-}`
-        },
-        {
           role: "user",
           content: prompt
         }
@@ -743,7 +649,7 @@ JSON 형식:
         return {
           nickname: orderData.nickname,
           orderTime: orderData.orderTime,
-          orderText: orderData.orderText || '',
+          orderText: orderText, // 그룹화된 주문에서 가져온 원본 텍스트 사용
           products: productsWithOriginalText,
           totalAmount
         };
@@ -768,67 +674,6 @@ JSON 형식:
       model: "gpt-4o",
       messages: [
         {
-          role: "system",
-          content: `당신은 카카오톡 주문 메시지를 분석하여 상품 목록과 매핑하는 최고 전문가입니다.
-
-중요한 규칙:
-1. 원본 주문내역에 있는 모든 주문을 반드시 분석해야 합니다. 누락이 절대 있어서는 안됩니다.
-
-2. 상품명 매칭 규칙:
-   - 정확히 일치하지 않더라도 유사한 상품을 찾아 매핑하세요
-   - "방할머니 파김치" → "방할머니 파김치 1팩(1키로)" 매칭 가능
-   - "편육" → "흙돼지편육2팩" 매칭 가능
-   - 상품명의 핵심 키워드를 기준으로 매칭하세요
-   - 상품 목록에서 가장 유사한 상품을 찾아 매핑하세요
-
-3. 수량 추출 규칙 (매우 중요 - 반드시 정확히 계산하세요):
-   
-   **편육 관련 특별 규칙:**
-   - "편육 2팩" → quantity: 1 (흙돼지편육2팩 상품 1개 주문)
-   - "편육 4팩" → quantity: 2 (흙돼지편육2팩 상품 2개 주문)
-   - "편육 6팩" → quantity: 3 (흙돼지편육2팩 상품 3개 주문)
-   - "편육 8팩" → quantity: 4 (흙돼지편육2팩 상품 4개 주문)
-   - 계산 공식: 주문팩수 ÷ 상품팩수 = 주문수량 (예: 4팩 ÷ 2팩 = 2개)
-   
-   **일반 상품 규칙:**
-   - "방할머니 파김치 2키로" → quantity: 2 (1키로 상품을 2개 주문)
-   - "사과 3개" → quantity: 3
-   - "닭발 1팩" → quantity: 1
-   - "A2팩" → quantity: 1 (상품명에 숫자가 포함되어 있어도 주문 수량은 1개)
-   - "B3팩 2개" → quantity: 2 (명시된 수량이 있으면 그 수량 사용)
-   
-   **핵심 원칙:**
-   - 상품명에 포함된 수량과 주문 수량을 명확히 구분하세요
-   - 주문에서 요청한 총 수량을 상품의 단위로 나누어 계산하세요
-   - 숫자 + 단위(팩, 개, 키로, kg 등) 패턴을 정확히 인식하세요
-   - 상품명 자체에 숫자가 포함된 경우와 주문 수량을 구분하세요
-
-4. 가격은 반드시 상품 목록에서 해당 상품의 정확한 가격을 사용 (절대 0원이면 안됨)
-5. originalText에는 해당 주문의 원본 텍스트를 그대로 포함하세요.
-6. 만약 목록에 없는 상품을 주문하거나, 수량이 불분명하면 'error' 필드에 이유를 적어줘
-7. 반드시 유효한 JSON 형식으로만 응답하세요.
-
-JSON 형식:
-{
-  "orders": [
-    {
-      "nickname": "닉네임",
-      "orderTime": "시간",
-      "products": [
-        {
-          "name": "상품명",
-          "quantity": 수량,
-          "price": 가격,
-          "total": 총액,
-          "similarity": 유사도(0-1),
-          "originalText": "원본 주문 텍스트"
-        }
-      ]
-    }
-  ]
-}`
-        },
-        {
           role: "user",
           content: prompt
         }
@@ -915,7 +760,7 @@ JSON 형식:
         return {
           nickname: orderData.nickname,
           orderTime: orderData.orderTime,
-          orderText: orderData.orderText || '',
+          orderText: orderText, // 그룹화된 주문에서 가져온 원본 텍스트 사용
           products: productsWithOriginalText,
           totalAmount
         };
@@ -933,59 +778,15 @@ JSON 형식:
     }
   };
 
-  // ===== AI 처리 전략 옵션 =====
-  // SKIP_MINI_PROCESS: 1차 GPT-4o-mini 과정 생략 여부
-  // true: 1차 과정 생략, 바로 GPT-4o로 처리 (현재 설정)
-  // false: 기존 하이브리드 모드 (1차 GPT-4o-mini + 2차 GPT-4o)
-  const SKIP_MINI_PROCESS = true; // 현재 1차 과정 생략 모드
   
   // AI 처리 전략: 옵션에 따라 1차 과정 생략 또는 하이브리드 모드 실행
   const callOpenAIHybrid = async (openai: OpenAI, prompt: string, orderCount: number, groupedOrders: GroupedOrder[], activeProducts: any[]): Promise<ProcessedOrder[]> => {
-    
     try {
-      if (SKIP_MINI_PROCESS) {
-        // 1차 과정 생략 모드: 바로 gpt-4o로 처리
-        
-        try {
-          const expertResult = await callOpenAI4o(openai, prompt, orderCount, groupedOrders, activeProducts);
-          console.log('gpt-4o 전문가 처리 완료');
-          return expertResult;
-        } catch (error) {
-          console.error('gpt-4o 처리 실패:', error);
-          throw error;
-        }
-      } else {
-        // 기존 하이브리드 모드: 1차 + 2차 처리
-        console.log('기존 하이브리드 모드 - 1차 gpt-4o-mini 처리 시작...');
-        
-        // 1단계: gpt-4o-mini로 1차 처리
-        const miniResult = await callOpenAIMini(openai, prompt, orderCount, groupedOrders, activeProducts);
-        
-        // similarity 점수 계산 (전체 상품의 평균 similarity)
-        const allSimilarities = miniResult.flatMap(order => 
-          order.products.map(product => product.similarity || 0)
-        );
-        const averageSimilarity = allSimilarities.length > 0 
-          ? allSimilarities.reduce((sum, sim) => sum + sim, 0) / allSimilarities.length 
-          : 0;
-        
-        console.log(`1단계 완료 - 평균 similarity: ${(averageSimilarity * 100).toFixed(1)}%`);
-        
-        // 항상 gpt-4o로 2차 검증 (수량 추출 정확도 향상을 위해)
-        console.log('수량 추출 정확도 향상을 위해 gpt-4o로 2차 검증 진행...');
-        
-        try {
-          const expertResult = await callOpenAI4o(openai, prompt, orderCount, groupedOrders, activeProducts);
-          console.log('2단계 완료 - gpt-4o 전문가 검증 완료');
-          return expertResult;
-        } catch (error) {
-          console.error('gpt-4o 2차 처리 실패, 1차 결과 사용:', error);
-          // 2차 처리 실패 시 1차 결과 사용
-          return miniResult;
-        }
-      }
+      const expertResult = await callOpenAI4o(openai, prompt, orderCount, groupedOrders, activeProducts);
+      console.log('gpt-4o 전문가 처리 완료');
+      return expertResult;
     } catch (error) {
-      console.error('하이브리드 전략 실패:', error);
+      console.error('gpt-4o 처리 실패:', error);
       throw error;
     }
   };
@@ -1143,15 +944,26 @@ JSON 형식:
       return;
     }
 
+    // AI 분석에서 상품이 있는 주문만 필터링
+    const ordersWithProducts = processedOrders.filter(order => order.products.length > 0);
+    
+    if (ordersWithProducts.length === 0) {
+      toast.error("AI 분석에서 상품을 찾을 수 없는 주문만 있습니다. 스프레드시트에 등록할 데이터가 없습니다.");
+      return;
+    }
+
     try {
       setCurrentStep("구글 스프레드시트에 등록 중...");
       setIsProcessing(true);
       setProgress(0);
 
-      // AI 분석된 주문 데이터를 Google Sheets 형식으로 변환
-      const orderData = processedOrders.map(order => ({
+      // AI 분석에서 상품이 있는 주문만 Google Sheets 형식으로 변환
+      const orderData = ordersWithProducts.map(order => ({
         nickname: order.nickname,
-        orderText: order.orderText,
+        orderText: order.orderText
+          .replace(/\r\n/g, '\n')  // Windows 줄바꿈을 Unix 줄바꿈으로 통일
+          .replace(/\r/g, '\n')    // Mac 줄바꿈을 Unix 줄바꿈으로 통일
+          .replace(/\n/g, '\n'),   // 명시적으로 줄바꿈 문자 보장
         notes: '',
         products: order.products.map(product => ({
           name: product.name,
@@ -1161,9 +973,12 @@ JSON 형식:
         }))
       }));
       
+      console.log('구글시트 등록 데이터:', orderData);
+      console.log('각 주문의 orderText 확인:', orderData.map(o => ({ nickname: o.nickname, orderText: o.orderText, products: o.products })));
+      
       // Google Sheets에 작성 (AI 분석된 수량 포함)
       await writeOrdersToSheet(date, orderData, products);
-      toast.success("구글 스프레드시트에 AI 분석 결과가 성공적으로 등록되었습니다!");
+      toast.success(`구글 스프레드시트에 AI 분석 결과가 성공적으로 등록되었습니다! (${ordersWithProducts.length}명의 주문)`);
       
       setProgress(100);
       setCurrentStep("구글시트 등록 완료!");
@@ -1392,19 +1207,11 @@ JSON 형식:
                         </div>
                         <div className="space-y-1 ml-2">
                           {groupedByNickname[nickname].map((order, index) => {
-                            // 날짜 형식 변환: "2024-01-15 오전 11:45" → "오전 11:45"
-                            let displayTime = order.orderTime;
-                            if (order.orderTime.includes('-')) {
-                              const parts = order.orderTime.split(' ');
-                              if (parts.length >= 2) {
-                                displayTime = parts.slice(1).join(' ');
-                              }
-                            }
-                            
+                            // orderText는 이미 [시간] 내용 형식으로 파싱됨
                             return (
                               <div key={index} className="text-sm p-2 bg-muted rounded">
-                                <span className="whitespace-pre-wrap">
-                                  [{displayTime}] {order.orderText}
+                                <span className="whitespace-pre-line">
+                                  {order.orderText}
                                 </span>
                               </div>
                             );
@@ -1448,7 +1255,9 @@ JSON 형식:
                       <div key={index} className="border rounded-lg p-3 bg-green-50">
                         <div className="flex items-center justify-between mb-2">
                           <div className="flex items-center gap-2">
-                            <Badge variant="outline" className="whitespace-nowrap">{order.nickname}</Badge>
+                            <Badge variant="outline" className="whitespace-nowrap">
+                              {order.nickname} ({order.orderText.split('\n').length}건)
+                            </Badge>
                             <span className="text-sm text-muted-foreground">
                               {order.orderTime.includes('-') ? 
                                 (() => {
@@ -1468,18 +1277,24 @@ JSON 형식:
                         </div>
                         
                         <div className="flex flex-col lg:flex-row gap-4">
-                          {/* 좌측: 원본 주문내역 (모바일: 전체 너비, 데스크톱: 50%) */}
+                          {/* 좌측: 원본 주문내역 (모바일: 위쪽, 데스크톱: 왼쪽 50%) */}
                           <div className="w-full lg:w-1/2 space-y-1">
                             <h4 className="font-medium text-xs text-muted-foreground">원본 주문내역</h4>
                             <div className="p-1 bg-white rounded">
-                              <div className="text-[12px] font-mono whitespace-pre-wrap break-words">
+                              <div className="text-[12px] font-mono  break-words">
                                 {combinedOriginalText.split(/(?=\[오[전후]\s+\d+:\d+\])/).map((part, index) => {
                                   // [18일 오후 12:51] 패턴으로 줄바꿈 처리
                                   if (part.trim()) {
+                                    const trimmedPart = part.trim();
+                                    // 시간 패턴만 있고 내용이 없는 라인 제거
+                                    const timeOnlyPattern = /^\[오[전후]\s+\d+:\d+\]\s*$/;
+                                    if (timeOnlyPattern.test(trimmedPart)) {
+                                      return null;
+                                    }
                                     return (
                                       <span key={index}>
                                         {index > 0 && '\n'}
-                                        {part.trim()}
+                                        {trimmedPart}
                                       </span>
                                     );
                                   }
@@ -1489,10 +1304,10 @@ JSON 형식:
                             </div>
                           </div>
                           
-                          {/* 구분선 */}
-                          <div className="w-full lg:w-px h-px lg:h-full bg-border"></div>
+                          {/* 구분선 (모바일: 가로선, 데스크톱: 세로선) */}
+                          <div className="w-full h-px lg:w-px lg:h-full bg-border"></div>
                           
-                          {/* 우측: 분석된 주문내역 (모바일: 전체 너비, 데스크톱: 50%) */}
+                          {/* 우측: 분석된 주문내역 (모바일: 아래쪽, 데스크톱: 오른쪽 50%) */}
                           <div className="w-full lg:w-1/2 space-y-1">
                             <h4 className="font-medium text-xs text-muted-foreground">분석된 주문내역</h4>
                             <div className="space-y-1">
@@ -1560,7 +1375,9 @@ JSON 형식:
                       <div key={index} className="border rounded-lg p-4">
                         <div className="flex items-center justify-between mb-3">
                           <div className="flex items-center gap-2">
-                            <Badge variant="outline" className="whitespace-nowrap">{order.nickname}</Badge>
+                            <Badge variant="outline" className="whitespace-nowrap">
+                              {order.nickname} ({order.orderText.split('\n').length}건)
+                            </Badge>
                             <span className="text-sm text-muted-foreground">
                               {order.orderTime.includes('-') ? 
                                 (() => {
@@ -1581,18 +1398,24 @@ JSON 형식:
                         </div>
                         
                         <div className="flex flex-col lg:flex-row gap-4">
-                          {/* 좌측: 원본 주문내역 (모바일: 전체 너비, 데스크톱: 50%) */}
+                          {/* 좌측: 원본 주문내역 (모바일: 위쪽, 데스크톱: 왼쪽 50%) */}
                           <div className="w-full lg:w-1/2 space-y-2">
                             <h4 className="font-medium text-sm text-muted-foreground">원본 주문내역</h4>
                             <div className="p-2 bg-muted rounded">
-                              <div className="text-[12px] font-mono whitespace-pre-wrap break-words">
+                              <div className="text-[12px] font-mono  break-words">
                                 {combinedOriginalText.split(/(?=\[오[전후]\s+\d+:\d+\])/).map((part, index) => {
                                   // [18일 오후 12:51] 패턴으로 줄바꿈 처리
                                   if (part.trim()) {
+                                    const trimmedPart = part.trim();
+                                    // 시간 패턴만 있고 내용이 없는 라인 제거
+                                    const timeOnlyPattern = /^\[오[전후]\s+\d+:\d+\]\s*$/;
+                                    if (timeOnlyPattern.test(trimmedPart)) {
+                                      return null;
+                                    }
                                     return (
                                       <span key={index}>
                                         {index > 0 && '\n'}
-                                        {part.trim()}
+                                        {trimmedPart}
                                       </span>
                                     );
                                   }
@@ -1602,10 +1425,10 @@ JSON 형식:
                             </div>
                           </div>
                           
-                          {/* 구분선 */}
-                          <div className="w-full lg:w-px h-px lg:h-full bg-border"></div>
+                          {/* 구분선 (모바일: 가로선, 데스크톱: 세로선) */}
+                          <div className="w-full h-px lg:w-px lg:h-full bg-border"></div>
                           
-                          {/* 우측: 분석된 주문내역 (모바일: 전체 너비, 데스크톱: 50%) */}
+                          {/* 우측: 분석된 주문내역 (모바일: 아래쪽, 데스크톱: 오른쪽 50%) */}
                           <div className="w-full lg:w-1/2 space-y-2">
                             <h4 className="font-medium text-sm text-muted-foreground">분석된 주문내역</h4>
                             <div className="space-y-1">
@@ -1667,6 +1490,24 @@ JSON 형식:
                 데이터베이스 저장
               </Button>
             </div>
+          )}
+
+          {/* 구글시트 등록 진행상황 - 구글시트 등록 중일 때만 표시 */}
+          {!isAIDisabled && processedOrders.length > 0 && isProcessing && currentStep.includes("구글") && (
+            <Card>
+              <CardContent className="pt-6">
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2">
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div>
+                    <span className="text-sm">{currentStep}</span>
+                    <span className="text-sm text-muted-foreground">
+                      {Math.round(progress)}%
+                    </span>
+                  </div>
+                  <Progress value={progress} className="w-full" />
+                </div>
+              </CardContent>
+            </Card>
           )}
     </div>
   );

@@ -257,8 +257,12 @@ export async function POST(request: NextRequest) {
             row.push('')
           }
           
-          // 원본주문
-          row.push(order.orderText)
+          // 원본주문 (줄바꿈 문자를 구글시트에서 인식할 수 있도록 처리)
+          const processedOrderText = order.orderText
+            .replace(/\r\n/g, '\n')  // Windows 줄바꿈을 Unix 줄바꿈으로 통일
+            .replace(/\r/g, '\n')    // Mac 줄바꿈을 Unix 줄바꿈으로 통일
+            .replace(/\n/g, '\n');   // 명시적으로 줄바꿈 문자 보장
+          row.push(processedOrderText)
           
           // 비고
           row.push(order.notes || '')
@@ -271,14 +275,72 @@ export async function POST(request: NextRequest) {
               const isAnalyzedProduct = typeof order.products[0] === 'object' && 'quantity' in order.products[0]
               
               if (isAnalyzedProduct) {
-                // AI 분석된 상품 정보에서 해당 상품의 수량 찾기
-                const analyzedProduct = (order.products as any[]).find(p => 
-                  p.name && p.name.replace(/\n/g, ' ').replace(/\s+/g, ' ').trim() === product.name.replace(/\n/g, ' ').replace(/\s+/g, ' ').trim()
-                )
+                // AI 분석된 상품 정보에서 해당 상품의 수량 찾기 (강화된 매칭 로직)
+                const analyzedProduct = (order.products as any[]).find(p => {
+                  if (!p.name) return false;
+                  
+                  const cleanedAnalyzedName = p.name.replace(/\n/g, ' ').replace(/\s+/g, ' ').trim();
+                  const cleanedProductName = product.name.replace(/\n/g, ' ').replace(/\s+/g, ' ').trim();
+                  
+                  // 1. 정확히 일치
+                  if (cleanedAnalyzedName === cleanedProductName) {
+                    console.log(`상품 매칭 성공 (정확 일치): "${cleanedAnalyzedName}" → "${cleanedProductName}", 수량: ${p.quantity}`);
+                    return true;
+                  }
+                  
+                  // 2. 상품명이 분석된 이름을 포함하거나 그 반대
+                  if (cleanedProductName.includes(cleanedAnalyzedName) || cleanedAnalyzedName.includes(cleanedProductName)) {
+                    console.log(`상품 매칭 성공 (포함 관계): "${cleanedAnalyzedName}" → "${cleanedProductName}", 수량: ${p.quantity}`);
+                    return true;
+                  }
+                  
+                  // 3. 키워드 기반 매칭 (예: "편육" → "흙돼지편육2팩")
+                  const analyzedKeywords = cleanedAnalyzedName.toLowerCase().split(/[\s\-\(\)\[\]]+/).filter((k: string) => k.length > 1);
+                  const productKeywords = cleanedProductName.toLowerCase().split(/[\s\-\(\)\[\]]+/).filter((k: string) => k.length > 1);
+                  
+                  // 공통 키워드가 있는지 확인
+                  const commonKeywords = analyzedKeywords.filter((keyword: string) => 
+                    productKeywords.some((pKeyword: string) => 
+                      pKeyword.includes(keyword) || keyword.includes(pKeyword)
+                    )
+                  );
+                  
+                  if (commonKeywords.length > 0) {
+                    console.log(`상품 매칭 성공 (키워드 매칭): "${cleanedAnalyzedName}" → "${cleanedProductName}", 공통키워드: ${commonKeywords.join(', ')}, 수량: ${p.quantity}`);
+                    return true;
+                  }
+                  
+                  // 4. 특별한 경우들 처리
+                  const specialCases = [
+                    // 편육 관련
+                    { from: '편육', to: '흙돼지편육' },
+                    { from: '편육', to: '편육' },
+                    // 파김치 관련
+                    { from: '파김치', to: '방할머니 파김치' },
+                    { from: '방할머니', to: '방할머니 파김치' },
+                    // 닭발 관련
+                    { from: '닭발', to: '무뼈닭발' },
+                    { from: '무뼈', to: '무뼈닭발' },
+                    // 곱창 관련
+                    { from: '곱창', to: '곱창전골' },
+                    { from: '전골', to: '곱창전골' }
+                  ];
+                  
+                  for (const specialCase of specialCases) {
+                    if (cleanedAnalyzedName.toLowerCase().includes(specialCase.from) && 
+                        cleanedProductName.toLowerCase().includes(specialCase.to)) {
+                      console.log(`상품 매칭 성공 (특별 케이스): "${cleanedAnalyzedName}" → "${cleanedProductName}", 수량: ${p.quantity}`);
+                      return true;
+                    }
+                  }
+                  
+                  return false;
+                })
                 
                 if (analyzedProduct) {
                   row.push(analyzedProduct.quantity.toString())
                 } else {
+                  console.log(`상품 매칭 실패: "${product.name}" (닉네임: ${order.nickname})`);
                   row.push('')
                 }
               } else {
@@ -301,19 +363,37 @@ export async function POST(request: NextRequest) {
     const headerRows = createHeaderRows(products)
     
     // 주문 데이터 포맷팅
+    console.log('API에서 받은 주문 데이터:', orders);
     const orderRows = formatOrderData(orders, products)
+    console.log('포맷팅된 주문 행:', orderRows);
     
     // 총 주문수 라인 생성 (수식으로 계산)
     const productColumns = headerRows[0].length - 3 // 헤더에서 주문자, 원본주문, 비고 제외
-    const totalOrderRow = ['총 주문수', '', '', ...new Array(productColumns).fill('')]
+    const startRow = headerRows.length + 1; // 헤더 다음부터 시작
+    const endRow = startRow + orderRows.length - 1; // 주문 데이터 끝
+    
+    // 각 상품별 총 주문수 계산 수식
+    const totalOrderFormulas = [];
+    for (let i = 0; i < productColumns; i++) {
+      const columnLetter = getColumnLetter(4 + i); // D, E, F, ... (주문자, 원본주문, 비고 제외)
+      totalOrderFormulas.push(`=SUM(${columnLetter}${startRow}:${columnLetter}${endRow})`);
+    }
+    const totalOrderRow = ['총 주문수', '', '', ...totalOrderFormulas]
     
     // 총 판매액 라인 생성 (판매가 × 주문수)
-    const totalSalesDataRow = ['총 판매액', '', '', ...new Array(productColumns).fill('')]
+    const totalSalesFormulas = [];
+    for (let i = 0; i < productColumns; i++) {
+      const columnLetter = getColumnLetter(4 + i); // D, E, F, ...
+      const priceRow = 3; // 판매가가 있는 행 (0-based이므로 3)
+      const totalOrderRowNum = headerRows.length + 1; // 총 주문수 행
+      totalSalesFormulas.push(`=${columnLetter}${priceRow}*${columnLetter}${totalOrderRowNum}`);
+    }
+    const totalSalesDataRow = ['총 판매액', '', '', ...totalSalesFormulas]
     
     // 모든 데이터를 스프레드시트에 작성 (헤더 + 총주문수 + 주문데이터 + 총주문수 + 총판매액)
     const allData = [...headerRows, totalOrderRow, ...orderRows, totalOrderRow, totalSalesDataRow]
     
-    // 데이터 작성
+    // 데이터 작성 (줄바꿈 처리를 위해 RAW 사용, 수식은 별도로 처리)
     await sheets.spreadsheets.values.update({
       spreadsheetId: SPREADSHEET_ID,
       range: `${sheetName}!A1`,
@@ -635,7 +715,7 @@ export async function POST(request: NextRequest) {
     // 셀 병합 (같은 닉네임의 첫 번째 칸)
     const mergeRequests = []
     let currentNickname = ''
-    let startRow = 6 // 헤더 4줄 + 총주문수 1줄 다음부터 시작
+    let mergeStartRow = 6 // 헤더 4줄 + 총주문수 1줄 다음부터 시작
     
     orderRows.forEach((row, index) => {
       const nickname = row[0]
@@ -643,12 +723,12 @@ export async function POST(request: NextRequest) {
       
       if (nickname && nickname !== currentNickname) {
         // 이전 닉네임의 셀 병합
-        if (currentNickname && actualRow > startRow) {
+        if (currentNickname && actualRow > mergeStartRow) {
           mergeRequests.push({
             mergeCells: {
               range: {
                 sheetId: newSheetId,
-                startRowIndex: startRow - 1,
+                startRowIndex: mergeStartRow - 1,
                 endRowIndex: actualRow - 1,
                 startColumnIndex: 0,
                 endColumnIndex: 1
@@ -659,19 +739,19 @@ export async function POST(request: NextRequest) {
         }
         
         currentNickname = nickname
-        startRow = actualRow
+        mergeStartRow = actualRow
       }
     })
     
     // 마지막 닉네임의 셀 병합
     if (currentNickname && orderRows.length > 0) {
       const lastRow = orderRows.length + 6 // 헤더 4줄 + 총주문수 1줄 + 데이터
-      if (lastRow > startRow) {
+      if (lastRow > mergeStartRow) {
         mergeRequests.push({
           mergeCells: {
             range: {
               sheetId: newSheetId,
-              startRowIndex: startRow - 1,
+              startRowIndex: mergeStartRow - 1,
               endRowIndex: lastRow,
               startColumnIndex: 0,
               endColumnIndex: 1
