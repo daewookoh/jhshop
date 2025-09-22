@@ -20,6 +20,11 @@ interface ParsedOrder {
   orderText: string;
 }
 
+interface OrderText {
+  nickname: string;
+  text: string;
+}
+
 interface GroupedOrder {
   nickname: string;
   orders: ParsedOrder[];
@@ -65,6 +70,9 @@ export function OrderUpload() {
   const [productMatches, setProductMatches] = useState<ProductMatch[]>([]);
   const [showProductSelection, setShowProductSelection] = useState(false);
   const [allProducts, setAllProducts] = useState<any[]>([]);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [batchProgress, setBatchProgress] = useState({ current: 0, total: 0 });
+  const [batchStatus, setBatchStatus] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   const { products } = useProducts();
@@ -373,6 +381,158 @@ export function OrderUpload() {
     }));
   };
 
+  // GPT-4o를 사용한 주문내역 분석
+  const analyzeOrdersWithGPT = async () => {
+    if (parsedOrders.length === 0) {
+      toast.error("분석할 주문내역이 없습니다.");
+      return;
+    }
+
+    // 기존 최종주문목록 초기화
+    setFinalOrders([]);
+    toast.info("기존 최종주문목록을 초기화하고 새로운 분석을 시작합니다.");
+    
+    setIsAnalyzing(true);
+    setIsProcessing(true);
+    setCurrentStep("GPT-4o로 주문내역 분석 중...");
+    setProgress(0);
+
+    try {
+      // 원본내역에서 주문시간 내용을 제거한 텍스트 추출
+      const orderTexts = parsedOrders.map(order => {
+        // [시간] 패턴을 제거
+        const cleanedText = order.orderText.replace(/\[[^\]]+\]\s*/g, '').trim();
+        return {
+          nickname: order.nickname,
+          text: cleanedText
+        };
+      });
+
+      console.log('=== GPT 분석용 데이터 ===');
+      console.log('정리된 주문 텍스트:', orderTexts);
+
+      // 배치 처리 정보 표시
+      const totalOrders = orderTexts.length;
+      const batchSize = 20;
+      const totalBatches = Math.ceil(totalOrders / batchSize);
+      
+      console.log('배치 처리 시작:', { totalOrders, totalBatches, isAnalyzing, isProcessing });
+      
+      setCurrentStep(`GPT-4o가 ${totalOrders}개 주문을 ${totalBatches}개 배치로 분석 중...`);
+      setBatchProgress({ current: 0, total: totalBatches });
+      setBatchStatus("분석 준비 중...");
+      setProgress(10);
+
+      // 주문을 배치로 나누기
+      const orderBatches: OrderText[][] = [];
+      for (let i = 0; i < orderTexts.length; i += batchSize) {
+        orderBatches.push(orderTexts.slice(i, i + batchSize));
+      }
+
+      let totalAnalyzedOrders = 0;
+      let totalNewOrders = 0;
+
+      // 각 배치를 순차적으로 처리
+      for (let i = 0; i < orderBatches.length; i++) {
+        const batch = orderBatches[i];
+        
+        setCurrentStep(`배치 ${i + 1}/${totalBatches} 처리 중... (${batch.length}개 주문)`);
+        setBatchProgress({ current: i, total: totalBatches });
+        setBatchStatus(`배치 ${i + 1} 분석 중...`);
+        
+        console.log(`배치 ${i + 1} 시작:`, { current: i, total: totalBatches, batchLength: batch.length });
+        
+        try {
+          // 단일 배치 API 호출
+          const response = await fetch('/api/analyze-batch', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              orders: batch,
+              products: allProducts.length > 0 ? allProducts : products
+            }),
+          });
+
+          if (!response.ok) {
+            throw new Error(`배치 ${i + 1} 분석 실패`);
+          }
+
+          const batchResult = await response.json();
+          console.log(`배치 ${i + 1} 분석 결과:`, batchResult);
+          
+          totalAnalyzedOrders += batchResult.analyzedCount;
+
+          // GPT 결과를 기존 상품과 매칭하여 최종주문목록에 추가
+          const batchNewOrders: FinalOrderItem[] = [];
+          
+          for (const analyzedOrder of batchResult.orders) {
+            const nickname = analyzedOrder.nickname;
+            
+            for (const item of analyzedOrder.items) {
+              // 상품명과 가장 유사한 상품 찾기
+              const matches = findProductMatches(item.productName);
+              
+              if (matches.length > 0 && matches[0].similarity >= 0.5) {
+                const matchedProduct = matches[0].product;
+                const newOrder: FinalOrderItem = {
+                  id: `${Date.now()}-${Math.random()}`,
+                  nickname: nickname,
+                  productName: matchedProduct.name,
+                  quantity: item.quantity,
+                  price: matchedProduct.price,
+                  total: matchedProduct.price * item.quantity
+                };
+                batchNewOrders.push(newOrder);
+              }
+            }
+          }
+
+          // 배치 결과를 즉시 최종주문목록에 추가
+          setFinalOrders(prev => [...prev, ...batchNewOrders]);
+          totalNewOrders += batchNewOrders.length;
+
+          // 배치 완료 상태 업데이트
+          setBatchProgress({ current: i + 1, total: totalBatches });
+          setBatchStatus(`배치 ${i + 1} 완료: ${batchNewOrders.length}개 상품 매칭됨`);
+          
+          // 진행률 업데이트 (10% + 배치 진행률 * 40%)
+          const batchProgressPercent = 10 + ((i + 1) / totalBatches) * 40;
+          setProgress(batchProgressPercent);
+
+          console.log(`배치 ${i + 1} 완료: ${batchNewOrders.length}개 상품이 최종주문목록에 추가됨`);
+
+          // API 호출 간격 조절 (Rate limiting 방지)
+          if (i < orderBatches.length - 1) {
+            await new Promise(resolve => setTimeout(resolve, 1000)); // 1초 대기
+          }
+
+        } catch (error) {
+          console.error(`배치 ${i + 1} 처리 실패:`, error);
+          setBatchStatus(`배치 ${i + 1} 실패: ${error instanceof Error ? error.message : '알 수 없는 오류'}`);
+          // 개별 배치 실패 시에도 계속 진행
+          continue;
+        }
+      }
+
+      setProgress(100);
+      setCurrentStep("GPT 분석 완료!");
+      setBatchStatus("모든 배치 처리 완료!");
+      
+      toast.success(`GPT-4o가 ${totalBatches}개 배치로 ${totalAnalyzedOrders}개 주문을 분석하여 ${totalNewOrders}개의 상품을 자동으로 매칭했습니다!`);
+
+    } catch (error) {
+      console.error("GPT 분석 실패:", error);
+      toast.error(`GPT 분석 실패: ${error instanceof Error ? error.message : '알 수 없는 오류'}`);
+      setCurrentStep("GPT 분석 실패");
+      setBatchStatus("분석 실패");
+    } finally {
+      setIsAnalyzing(false);
+      setIsProcessing(false);
+    }
+  };
+
   // 구글시트 작성
   const handleSaveToGoogleSheets = async () => {
     if (finalOrders.length === 0) {
@@ -601,7 +761,7 @@ export function OrderUpload() {
           </Card>
 
       {/* 처리 버튼 */}
-          <div className="flex justify-center">
+          <div className="flex justify-center gap-4">
             <Button
               onClick={handleUpload}
           disabled={!canUpload}
@@ -609,7 +769,7 @@ export function OrderUpload() {
             !canUpload 
                   ? "bg-gray-400 hover:bg-gray-400 cursor-not-allowed" 
                   : "bg-blue-600 hover:bg-blue-700 text-white"
-              } min-w-[300px] px-6 py-3`}
+              } min-w-[200px] px-6 py-3`}
             >
               {isProcessing 
                 ? "분석 중..." 
@@ -618,11 +778,28 @@ export function OrderUpload() {
                   : "파일을 먼저 선택해주세요"
               }
             </Button>
+            
+            {parsedOrders.length > 0 && (
+              <Button
+                onClick={analyzeOrdersWithGPT}
+                disabled={isAnalyzing || isProcessing}
+                className={`${
+                  isAnalyzing || isProcessing
+                    ? "bg-gray-400 hover:bg-gray-400 cursor-not-allowed" 
+                    : "bg-purple-600 hover:bg-purple-700 text-white"
+                } min-w-[200px] px-6 py-3`}
+              >
+                {isAnalyzing ? "GPT 분석 중..." : "GPT 자동 분석"}
+              </Button>
+            )}
           </div>
           
-          {isProcessing && (
+          {(isProcessing || isAnalyzing) && (
             <div className="text-center text-sm text-blue-600">
-              주문내역을 분석하고 있습니다. 잠시만 기다려주세요...
+              {isProcessing 
+                ? "주문내역을 분석하고 있습니다. 잠시만 기다려주세요..."
+                : "GPT-4o가 주문내역을 자동으로 분석하고 있습니다. 잠시만 기다려주세요..."
+              }
             </div>
           )}
 
@@ -667,6 +844,27 @@ export function OrderUpload() {
                     </span>
                   </div>
                   <Progress value={progress} className="w-full" />
+                  
+                  {/* 배치 진행 상황 */}
+                  {isAnalyzing && batchProgress.total > 0 && (
+                    <div className="space-y-3 p-3 bg-blue-50 rounded-lg border border-blue-200">
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-blue-700 font-medium">배치 처리 현황</span>
+                        <span className="font-bold text-blue-800">
+                          {batchProgress.current}/{batchProgress.total} 배치
+                        </span>
+                      </div>
+                      <div className="space-y-2">
+                        <Progress 
+                          value={(batchProgress.current / batchProgress.total) * 100} 
+                          className="w-full h-3" 
+                        />
+                        <div className="text-sm text-blue-600 text-center font-medium">
+                          {batchStatus}
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -776,7 +974,7 @@ export function OrderUpload() {
                       {/* 우측: 최종주문목록 영역 (모바일: 아래쪽, 데스크톱: 오른쪽 50%) */}
                           <div className="w-full lg:w-1/2 space-y-1">
                         <h4 className="font-medium text-xs text-muted-foreground">최종주문목록</h4>
-                        <div className="space-y-1 max-h-[300px] overflow-y-auto">
+                        <div className="space-y-1">
                           {finalOrders.filter(order => order.nickname === nickname).map((order) => (
                             <div key={order.id} className="flex items-center justify-between p-2 bg-white border rounded">
                               <div className="flex-1 min-w-0">
