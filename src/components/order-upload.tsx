@@ -826,17 +826,26 @@ export function OrderUpload() {
             </Button>
             
             {parsedOrders.length > 0 && (
-              <Button
-                onClick={analyzeOrdersWithGPT}
-                disabled={isAnalyzing || isProcessing}
-                className={`${
-                  isAnalyzing || isProcessing
-                    ? "bg-gray-400 hover:bg-gray-400 cursor-not-allowed" 
-                    : "bg-purple-600 hover:bg-purple-700 text-white"
-                } min-w-[200px] px-6 py-3`}
-              >
-                {isAnalyzing ? "GPT 분석 중..." : "GPT 자동 분석"}
-              </Button>
+              <>
+                <Button
+                  onClick={analyzeOrdersWithGPT}
+                  disabled={isAnalyzing || isProcessing}
+                  className={`${
+                    isAnalyzing || isProcessing
+                      ? "bg-gray-400 hover:bg-gray-400 cursor-not-allowed" 
+                      : "bg-purple-600 hover:bg-purple-700 text-white"
+                  } min-w-[200px] px-6 py-3`}
+                >
+                  {isAnalyzing ? "GPT 분석 중..." : "GPT 자동 분석"}
+                </Button>
+                
+                <Button
+                  onClick={() => window.open('https://docs.google.com/spreadsheets/d/14f29cGpEAITHa8gb60JcyXMONPj0KCt7FKKuj1gYrm8', '_blank')}
+                  className="bg-green-600 hover:bg-green-700 text-white min-w-[200px] px-6 py-3"
+                >
+                  구글시트 바로가기
+                </Button>
+              </>
             )}
           </div>
           
