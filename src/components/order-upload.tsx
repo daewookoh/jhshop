@@ -135,7 +135,7 @@ export function OrderUpload() {
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i].trim();
       
-      if (line.startsWith('-') || !line.startsWith('[')) {
+      if (line.startsWith('-') || !line.startsWith('[') || line.includes('님이 나갔습니다') || line.includes('님이 들어왔습니다')) {
         continue;
       }
       
