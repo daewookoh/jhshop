@@ -127,7 +127,36 @@ export function OrderUpload() {
     }
   };
 
+  // 파일 내용 전처리 함수 - 불필요한 내용 제거
+  const preprocessFileContent = (fileContent: string): string => {
+    const lines = fileContent.split('\n');
+    const cleanedLines: string[] = [];
+    
+    for (const line of lines) {
+      const trimmedLine = line.trim();
+      
+      // 제거할 패턴들
+      const shouldRemove = 
+        trimmedLine.startsWith('---------') ||  // 구분선
+        trimmedLine.includes('님이 들어왔습니다') ||
+        trimmedLine.includes('님이 나갔습니다') ||
+        trimmedLine.includes('메시지가 삭제되었습니다') ||
+        trimmedLine.includes('채팅방을 나갔습니다') ||
+        trimmedLine.includes('채팅방에 입장했습니다') ||
+        trimmedLine.includes('시스템') ||
+        trimmedLine.includes('관리자') ||
+        trimmedLine === '';  // 빈 줄
+      
+      if (!shouldRemove) {
+        cleanedLines.push(line);
+      }
+    }
+    
+    return cleanedLines.join('\n');
+  };
+
   const parseKakaoTalkFile = async (fileContent: string): Promise<ParsedOrder[]> => {
+    // 이미 전처리된 내용을 받음
     const lines = fileContent.split('\n');
     const orders: ParsedOrder[] = [];
     const orderGroups: Record<string, { messages: { text: string; time: string }[]; firstTime: string; lastTime: string }> = {};
@@ -135,7 +164,8 @@ export function OrderUpload() {
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i].trim();
       
-      if (line.startsWith('-') || !line.startsWith('[') || line.includes('님이 나갔습니다') || line.includes('님이 들어왔습니다')) {
+      // 기본 형식 검증만 수행 (전처리에서 이미 불필요한 내용 제거됨)
+      if (line.startsWith('-') || !line.startsWith('[')) {
         continue;
       }
       
@@ -165,6 +195,12 @@ export function OrderUpload() {
             
             fullOrderText += ' ' + nextLine;
             j++;
+          }
+          
+          // 빈 텍스트가 되면 건너뛰기
+          if (!fullOrderText.trim()) {
+            i = j - 1;
+            continue;
           }
           
           i = j - 1;
@@ -656,10 +692,20 @@ export function OrderUpload() {
         tryNextEncoding();
       });
 
+      setCurrentStep("파일 내용 전처리 중...");
+      setProgress(30);
+      
+      // 파일 내용 전처리 (불필요한 내용 제거)
+      const cleanedContent = preprocessFileContent(fileContent);
+      console.log('전처리 완료:', { 
+        originalLines: fileContent.split('\n').length, 
+        cleanedLines: cleanedContent.split('\n').length 
+      });
+      
       setCurrentStep("주문내역 파싱 중...");
       setProgress(50);
       
-      const orders = await parseKakaoTalkFile(fileContent);
+      const orders = await parseKakaoTalkFile(cleanedContent);
       setParsedOrders(orders);
 
       if (orders.length === 0) {
@@ -916,16 +962,12 @@ export function OrderUpload() {
                           {/* 좌측: 원본 주문내역 (모바일: 위쪽, 데스크톱: 왼쪽 50%) */}
                           <div className="w-full lg:w-1/2 space-y-1">
                             <h4 className="font-medium text-xs text-muted-foreground">원본 주문내역</h4>
-                        <div className="space-y-1">
+                        <div className="">
                           {groupedByNickname[nickname]
-                            .filter(order => {
-                              const trimmedText = order.orderText.trim();
-                              return trimmedText !== "" && trimmedText.length > 0 && trimmedText.replace(/\s+/g, '') !== "";
-                            })
                             .map((order, index) => (
                             <div key={index} className="text-sm p-2 bg-muted rounded">
                               <span 
-                                className="whitespace-pre-line select-text cursor-pointer hover:bg-blue-50 p-1 rounded"
+                                className="whitespace-pre-line select-text cursor-pointer hover:bg-blue-50 rounded"
                                 onMouseUp={(e) => {
                                   const selection = window.getSelection();
                                   const selectedText = selection?.toString().trim();
@@ -960,9 +1002,7 @@ export function OrderUpload() {
                                     }
                                   }
                                 }}
-                              >
-                                {order.orderText}
-                                      </span>
+                              >{order.orderText}</span>
                               </div>
                           ))}
                             </div>
