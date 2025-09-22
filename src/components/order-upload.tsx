@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Upload, FileText, Users, AlertCircle, X, Plus } from "lucide-react";
+import { Upload, FileText, Users, AlertCircle, X, Plus, ChevronUp, ChevronDown } from "lucide-react";
 import { toast } from "sonner";
 import { useProducts } from "@/hooks/useProducts";
 import { writeOrdersToSheet } from "@/lib/googleSheets";
@@ -64,8 +64,6 @@ export function OrderUpload() {
   const [selectedNickname, setSelectedNickname] = useState<string>("");
   const [productMatches, setProductMatches] = useState<ProductMatch[]>([]);
   const [showProductSelection, setShowProductSelection] = useState(false);
-  const [selectedProduct, setSelectedProduct] = useState<any>(null);
-  const [quantity, setQuantity] = useState<number>(1);
   const [allProducts, setAllProducts] = useState<any[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   
@@ -219,81 +217,91 @@ export function OrderUpload() {
       .sort((a, b) => a.nickname.localeCompare(b.nickname, 'ko'));
   };
 
-  // 유사도 계산 함수 (0.0 ~ 1.0 범위로 제한)
-  const calculateSimilarity = (str1: string, str2: string): number => {
-    const s1 = str1.toLowerCase().trim();
-    const s2 = str2.toLowerCase().trim();
+  // 유사도 계산 함수 (선택한 단어가 상품명과 얼마나 일치하는지)
+  const calculateSimilarity = (selectedWord: string, productName: string): number => {
+    const word = selectedWord.toLowerCase().trim();
+    const product = productName.toLowerCase().trim();
     
-    if (s1 === s2) return 1.0;
-    if (s1.length === 0 || s2.length === 0) return 0.0;
+    if (word === product) return 1.0;
+    if (word.length === 0 || product.length === 0) return 0.0;
     
     // 1. 정확한 매칭
-    if (s1 === s2) return 1.0;
+    if (word === product) return 1.0;
     
-    // 2. 포함 관계 매칭 (수정: 1.0을 초과하지 않도록)
-    if (s1.includes(s2) || s2.includes(s1)) {
-      const minLength = Math.min(s1.length, s2.length);
-      const maxLength = Math.max(s1.length, s2.length);
-      // 포함된 부분의 비율로 계산 (최대 0.9)
-      return Math.min(minLength / maxLength * 0.9, 0.9);
+    // 2. 선택한 단어가 상품명에 포함되는 경우
+    if (product.includes(word)) {
+      // 선택한 단어가 상품명에 완전히 포함되면 100%
+      return 1.0;
     }
     
-    // 3. 순차적 글자 매칭
-    let matchingChars = 0;
-    const maxLength = Math.max(s1.length, s2.length);
+    // 3. 상품명이 선택한 단어에 포함되는 경우
+    if (word.includes(product)) {
+      // 포함된 상품명의 길이 비율로 계산
+      return product.length / word.length;
+    }
     
-    for (let i = 0; i < maxLength; i++) {
-      if (i < s1.length && i < s2.length && s1[i] === s2[i]) {
-        matchingChars++;
+    // 4. 부분 매칭 (연속된 글자들)
+    let maxMatch = 0;
+    for (let i = 0; i <= word.length - 2; i++) {
+      for (let j = i + 2; j <= word.length; j++) {
+        const substring = word.substring(i, j);
+        if (product.includes(substring)) {
+          maxMatch = Math.max(maxMatch, substring.length);
+        }
       }
     }
     
-    const sequentialSimilarity = matchingChars / maxLength;
+    if (maxMatch > 0) {
+      return maxMatch / Math.max(word.length, product.length);
+    }
     
-    // 4. 공통 글자 매칭 (순서 무관)
-    const chars1 = s1.split('');
-    const chars2 = s2.split('');
-    const commonChars = chars1.filter(char => chars2.includes(char));
-    const commonSimilarity = commonChars.length / Math.max(chars1.length, chars2.length);
+    // 5. 글자 단위 매칭
+    const wordChars = word.split('');
+    const productChars = product.split('');
+    const commonChars = wordChars.filter(char => productChars.includes(char));
+    const charSimilarity = commonChars.length / Math.max(wordChars.length, productChars.length);
     
-    // 5. 키워드 매칭
-    const words1 = s1.split(/\s+/);
-    const words2 = s2.split(/\s+/);
-    const commonWords = words1.filter(word => words2.includes(word));
-    const keywordSimilarity = commonWords.length / Math.max(words1.length, words2.length);
+    // 6. 단어 단위 매칭 (공백으로 분리)
+    const wordWords = word.split(/\s+/);
+    const productWords = product.split(/\s+/);
+    const commonWords = wordWords.filter(w => productWords.includes(w));
+    const wordSimilarity = commonWords.length / Math.max(wordWords.length, productWords.length);
     
-    // 가장 높은 유사도 반환 (0.0 ~ 1.0 범위로 제한)
-    return Math.min(Math.max(sequentialSimilarity, commonSimilarity, keywordSimilarity), 1.0);
+    // 가장 높은 유사도 반환
+    return Math.max(charSimilarity, wordSimilarity);
   };
 
-  // 상품 매칭 함수 (전체 상품 - 활성/비활성 모두)
+  // 상품 매칭 함수 (활성 상품만)
   const findProductMatches = (text: string): ProductMatch[] => {
     // 직접 로드한 전체 상품 데이터를 우선 사용
     // 없으면 useProducts 훅의 전체 상품 사용
     const allProductsToSearch = allProducts.length > 0 ? allProducts : products;
     
+    // 활성 상품만 필터링
+    const activeProducts = allProductsToSearch.filter(p => p.is_active === true);
+    
     console.log('=== 상품 매칭 디버깅 ===');
     console.log('useProducts 상품 수:', products.length);
     console.log('직접 로드된 전체 상품 수:', allProducts.length);
-    console.log('최종 검색할 상품 수:', allProductsToSearch.length);
-    console.log('최종 검색할 상품 목록:', allProductsToSearch.map(p => ({ name: p.name, is_active: p.is_active })));
+    console.log('활성 상품 수:', activeProducts.length);
+    console.log('활성 상품 목록:', activeProducts.map(p => p.name));
     console.log('선택된 텍스트:', text);
     
     const matches: ProductMatch[] = [];
     
-    for (const product of allProductsToSearch) {
+    for (const product of activeProducts) {
       const dbName = product.name.replace(/\n/g, ' ').replace(/\s+/g, ' ').trim();
       const similarity = calculateSimilarity(text, dbName);
       
-      console.log(`상품: "${dbName}" (활성: ${product.is_active}) vs 선택텍스트: "${text}" = 유사도: ${similarity.toFixed(3)}`);
+      console.log(`상품: "${dbName}" vs 선택텍스트: "${text}" = 유사도: ${similarity.toFixed(3)}`);
       
-      // 유사도가 0.1 이상이면 매칭으로 간주 (활성/비활성 모두 포함)
+      // 유사도가 0.1 이상이면 매칭으로 간주
       if (similarity >= 0.1) {
         matches.push({ product, similarity });
       }
     }
     
-    console.log('매칭된 상품들:', matches.map(m => ({ name: m.product.name, is_active: m.product.is_active, similarity: m.similarity })));
+    console.log('매칭된 상품들:', matches.map(m => ({ name: m.product.name, similarity: m.similarity })));
     console.log('=== 매칭 완료 ===');
     
     // 유사도가 높은 순으로 정렬하고 최대 5개 반환
@@ -323,54 +331,46 @@ export function OrderUpload() {
     setShowProductSelection(true);
   };
 
-  // 상품 선택 핸들러
+  // 상품 선택 핸들러 (바로 최종주문목록에 추가)
   const handleProductSelect = (product: any) => {
-    // 미사용 상품인 경우 경고창 표시
-    if (!product.is_active) {
-      alert("미사용 상품입니다.");
-      return;
-    }
-    
-    setSelectedProduct(product);
-    setQuantity(1);
-  };
-
-  // 최종주문목록에 추가
-  const handleAddToFinalOrders = () => {
-    if (!selectedProduct) {
-      toast.error("상품을 선택해주세요.");
-      return;
-    }
-    
-    if (quantity <= 0) {
-      toast.error("수량을 1개 이상 입력해주세요.");
-      return;
-    }
-    
     const newOrder: FinalOrderItem = {
       id: `${Date.now()}-${Math.random()}`,
       nickname: selectedNickname,
-      productName: selectedProduct.name,
-      quantity: quantity,
-      price: selectedProduct.price,
-      total: selectedProduct.price * quantity
+      productName: product.name,
+      quantity: 1,
+      price: product.price,
+      total: product.price * 1
     };
     
     setFinalOrders(prev => [...prev, newOrder]);
     setShowProductSelection(false);
-    setSelectedProduct(null);
     setSelectedText("");
     setSelectedNickname("");
     setProductMatches([]);
-    setQuantity(1);
     
     toast.success("최종주문목록에 추가되었습니다.");
   };
+
 
   // 최종주문목록에서 삭제
   const handleRemoveFromFinalOrders = (id: string) => {
     setFinalOrders(prev => prev.filter(order => order.id !== id));
     toast.success("주문이 삭제되었습니다.");
+  };
+
+  // 수량 조정 함수
+  const handleQuantityChange = (id: string, change: number) => {
+    setFinalOrders(prev => prev.map(order => {
+      if (order.id === id) {
+        const newQuantity = Math.max(1, order.quantity + change);
+        return {
+          ...order,
+          quantity: newQuantity,
+          total: order.price * newQuantity
+        };
+      }
+      return order;
+    }));
   };
 
   // 구글시트 작성
@@ -385,8 +385,17 @@ export function OrderUpload() {
       setIsProcessing(true);
       setProgress(0);
 
-      // 닉네임별로 그룹화
-      const groupedByNickname = finalOrders.reduce((acc, order) => {
+      // 원본주문내역을 닉네임별로 그룹화
+      const groupedByNickname = parsedOrders.reduce((acc, order) => {
+        if (!acc[order.nickname]) {
+          acc[order.nickname] = [];
+        }
+        acc[order.nickname].push(order);
+        return acc;
+      }, {} as Record<string, ParsedOrder[]>);
+
+      // 최종주문목록을 닉네임별로 그룹화
+      const finalOrdersByNickname = finalOrders.reduce((acc, order) => {
         if (!acc[order.nickname]) {
           acc[order.nickname] = [];
         }
@@ -394,17 +403,17 @@ export function OrderUpload() {
         return acc;
       }, {} as Record<string, FinalOrderItem[]>);
 
-      // Google Sheets 형식으로 변환
+      // Google Sheets 형식으로 변환 (원본주문내역 + 최종주문 수량)
       const orderData = Object.entries(groupedByNickname).map(([nickname, orders]) => ({
         nickname,
-        orderText: orders.map(order => `${order.productName} ${order.quantity}개`).join('\n'),
+        orderText: orders.map(order => order.orderText).join('\n'),
         notes: '',
-        products: orders.map(order => ({
+        products: finalOrdersByNickname[nickname] ? finalOrdersByNickname[nickname].map(order => ({
           name: order.productName,
           quantity: order.quantity,
           price: order.price,
           total: order.total
-        }))
+        })) : []
       }));
       
       console.log('=== 구글시트 전송 데이터 ===');
@@ -412,7 +421,7 @@ export function OrderUpload() {
       console.log('전송할 상품 데이터:', allProducts.length > 0 ? allProducts : products);
       
       await writeOrdersToSheet(date, orderData, allProducts.length > 0 ? allProducts : products);
-      toast.success(`구글 스프레드시트에 ${finalOrders.length}건의 주문이 등록되었습니다!`);
+      toast.success(`구글 스프레드시트에 ${parsedOrders.length}건의 주문이 등록되었습니다!`);
       
       setProgress(100);
       setCurrentStep("구글시트 등록 완료!");
@@ -451,7 +460,17 @@ export function OrderUpload() {
         
         const tryNextEncoding = () => {
           if (currentEncodingIndex >= tryEncodings.length) {
-            reject(new Error('모든 인코딩 시도 실패'));
+            // 모든 인코딩 시도 실패 시 원문으로 파싱 진행
+            console.warn('모든 인코딩 시도 실패, 원문으로 파싱 진행');
+            const reader = new FileReader();
+            reader.onload = (e) => {
+              const content = e.target?.result as string;
+              resolve(content); // 원문 그대로 사용
+            };
+            reader.onerror = () => {
+              reject(new Error('파일 읽기 실패'));
+            };
+            reader.readAsText(file, 'UTF-8'); // 기본 UTF-8로 읽기
             return;
           }
           
@@ -700,7 +719,12 @@ export function OrderUpload() {
                           <div className="w-full lg:w-1/2 space-y-1">
                             <h4 className="font-medium text-xs text-muted-foreground">원본 주문내역</h4>
                         <div className="space-y-1">
-                          {groupedByNickname[nickname].map((order, index) => (
+                          {groupedByNickname[nickname]
+                            .filter(order => {
+                              const trimmedText = order.orderText.trim();
+                              return trimmedText !== "" && trimmedText.length > 0 && trimmedText.replace(/\s+/g, '') !== "";
+                            })
+                            .map((order, index) => (
                             <div key={index} className="text-sm p-2 bg-muted rounded">
                               <span 
                                 className="whitespace-pre-line select-text cursor-pointer hover:bg-blue-50 p-1 rounded"
@@ -709,6 +733,33 @@ export function OrderUpload() {
                                   const selectedText = selection?.toString().trim();
                                   if (selectedText && selectedText.length >= 2) {
                                     handleTextSelection(selectedText, nickname);
+                                  }
+                                }}
+                                onClick={(e) => {
+                                  // 클릭 시에는 선택된 텍스트를 가져옴 (드래그로 선택된 경우)
+                                  const selection = window.getSelection();
+                                  const selectedText = selection?.toString().trim();
+                                  if (selectedText && selectedText.length >= 2) {
+                                    handleTextSelection(selectedText, nickname);
+                                  } else {
+                                    // 클릭한 위치의 단어를 선택
+                                    const range = document.caretRangeFromPoint(e.clientX, e.clientY);
+                                    if (range) {
+                                      const node = range.startContainer;
+                                      if (node.nodeType === Node.TEXT_NODE) {
+                                        const text = node.textContent || "";
+                                        const offset = range.startOffset;
+                                        // 단어 경계 찾기
+                                        let start = offset;
+                                        while (start > 0 && /\w|[가-힣]/.test(text[start - 1])) start--;
+                                        let end = offset;
+                                        while (end < text.length && /\w|[가-힣]/.test(text[end])) end++;
+                                        const wordText = text.slice(start, end).trim();
+                                        if (wordText && wordText.length >= 2) {
+                                          handleTextSelection(wordText, nickname);
+                                        }
+                                      }
+                                    }
                                   }
                                 }}
                               >
@@ -731,17 +782,43 @@ export function OrderUpload() {
                               <div className="flex-1 min-w-0">
                                 <div className="text-sm font-medium truncate">{order.productName}</div>
                                 <div className="text-xs text-muted-foreground">
-                                  {order.quantity}개 × {order.price.toLocaleString()}원 = {order.total.toLocaleString()}원
+                                  {order.price.toLocaleString()}원
                                         </div>
                                     </div>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => handleRemoveFromFinalOrders(order.id)}
-                                className="h-6 w-6 p-0 text-red-500 hover:text-red-700 hover:bg-red-50"
-                              >
-                                <X className="h-3 w-3" />
-                              </Button>
+                              <div className="flex items-center gap-1">
+                                <div className="flex flex-col">
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => handleQuantityChange(order.id, 1)}
+                                    className="h-4 w-4 p-0 text-gray-500 hover:text-gray-700 hover:bg-gray-100"
+                                  >
+                                    <ChevronUp className="h-3 w-3" />
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => handleQuantityChange(order.id, -1)}
+                                    className="h-4 w-4 p-0 text-gray-500 hover:text-gray-700 hover:bg-gray-100"
+                                  >
+                                    <ChevronDown className="h-3 w-3" />
+                                  </Button>
+                                </div>
+                                <div className="text-sm font-medium min-w-[20px] text-center">
+                                  {order.quantity}
+                                </div>
+                                <div className="text-xs text-muted-foreground min-w-[60px] text-right">
+                                  {order.total.toLocaleString()}원
+                                </div>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleRemoveFromFinalOrders(order.id)}
+                                  className="h-6 w-6 p-0 text-red-500 hover:text-red-700 hover:bg-red-50"
+                                >
+                                  <X className="h-3 w-3" />
+                                </Button>
+                              </div>
                                 </div>
                               ))}
                           {finalOrders.filter(order => order.nickname === nickname).length === 0 && (
@@ -780,25 +857,12 @@ export function OrderUpload() {
                   {productMatches.map((match, index) => (
                     <div
                       key={index}
-                      className={`p-3 border rounded cursor-pointer transition-colors ${
-                        selectedProduct?.id === match.product.id
-                          ? 'border-blue-500 bg-blue-50'
-                          : match.product.is_active
-                            ? 'border-gray-200 hover:border-gray-300'
-                            : 'border-red-200 bg-red-50 hover:border-red-300'
-                      }`}
+                      className="p-3 border rounded cursor-pointer transition-colors border-gray-200 hover:border-gray-300"
                       onClick={() => handleProductSelect(match.product)}
                     >
                       <div className="flex justify-between items-start gap-3">
                         <div className="flex-1 min-w-0">
-                          <div className="flex items-start gap-2 mb-1">
-                            <div className="font-medium truncate flex-1">{match.product.name}</div>
-                            {!match.product.is_active && (
-                              <Badge variant="destructive" className="text-xs flex-shrink-0">
-                                미사용
-                              </Badge>
-                            )}
-                          </div>
+                          <div className="font-medium truncate flex-1 mb-1">{match.product.name}</div>
                           <div className="text-sm text-muted-foreground">
                             {match.product.price.toLocaleString()}원
                           </div>
@@ -818,41 +882,17 @@ export function OrderUpload() {
                                 </div>
                               )}
               
-              {selectedProduct && (
-                <div className="space-y-2">
-                  <Label htmlFor="quantity" className="text-sm font-medium">수량</Label>
-                  <Input
-                    id="quantity"
-                    type="number"
-                    min="1"
-                    value={quantity}
-                    onChange={(e) => setQuantity(parseInt(e.target.value) || 1)}
-                    className="h-8"
-                  />
-                            </div>
-              )}
-              
-              <div className="flex gap-2 pt-4">
+              <div className="flex justify-end pt-4">
               <Button
                   variant="outline"
                   onClick={() => {
                     setShowProductSelection(false);
-                    setSelectedProduct(null);
                     setSelectedText("");
                     setSelectedNickname("");
                     setProductMatches([]);
-                    setQuantity(1);
                   }}
-                  className="flex-1"
                 >
-                  취소
-              </Button>
-              <Button
-                  onClick={handleAddToFinalOrders}
-                  disabled={!selectedProduct}
-                  className="flex-1"
-              >
-                  추가
+                  닫기
               </Button>
               </div>
             </div>
@@ -861,14 +901,14 @@ export function OrderUpload() {
           )}
 
       {/* 구글시트 작성 버튼 */}
-      {finalOrders.length > 0 && (
+      {parsedOrders.length > 0 && (
         <div className="flex justify-center pt-4">
           <Button
             onClick={handleSaveToGoogleSheets}
             disabled={isProcessing}
             className="bg-green-600 hover:bg-green-700 text-white min-w-[200px]"
           >
-            {isProcessing ? "구글시트 작성 중..." : `구글시트 작성 (${finalOrders.length}건)`}
+            {isProcessing ? "구글시트 작성 중..." : `구글시트 작성 (${parsedOrders.length}건)`}
           </Button>
                   </div>
           )}
