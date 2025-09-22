@@ -152,7 +152,7 @@ export async function POST(request: NextRequest) {
     // 각 배치를 순차적으로 처리
     for (let i = 0; i < orderBatches.length; i++) {
       const batch = orderBatches[i];
-      console.log(`배치 ${i + 1}/${orderBatches.length} 처리 중... (${batch.length}개 주문)`);
+      console.log(`배치 ${i + 1}/${orderBatches.length} 처리 중... (${batch.length}명 주문)`);
       
       try {
         const batchResult = await processBatch(batch, products);

@@ -418,7 +418,7 @@ export function OrderUpload() {
       
       console.log('배치 처리 시작:', { totalOrders, totalBatches, isAnalyzing, isProcessing });
       
-      setCurrentStep(`GPT-4o가 ${totalOrders}개 주문을 ${totalBatches}개 배치로 분석 중...`);
+      setCurrentStep(`GPT-4o가 ${totalOrders}명 주문을 ${totalBatches}개 배치로 분석 중...`);
       setBatchProgress({ current: 0, total: totalBatches });
       setBatchStatus("분석 준비 중...");
       setProgress(10);
@@ -436,7 +436,7 @@ export function OrderUpload() {
       for (let i = 0; i < orderBatches.length; i++) {
         const batch = orderBatches[i];
         
-        setCurrentStep(`배치 ${i + 1}/${totalBatches} 처리 중... (${batch.length}개 주문)`);
+        setCurrentStep(`배치 ${i + 1}/${totalBatches} 처리 중... (${batch.length}명 주문)`);
         setBatchProgress({ current: i, total: totalBatches });
         setBatchStatus(`배치 ${i + 1} 분석 중...`);
         
@@ -520,7 +520,7 @@ export function OrderUpload() {
       setCurrentStep("GPT 분석 완료!");
       setBatchStatus("모든 배치 처리 완료!");
       
-      toast.success(`GPT-4o가 ${totalBatches}개 배치로 ${totalAnalyzedOrders}개 주문을 분석하여 ${totalNewOrders}개의 상품을 자동으로 매칭했습니다!`);
+      toast.success(`GPT-4o가 ${totalBatches}개 배치로 ${totalAnalyzedOrders}명 주문을 분석하여 ${totalNewOrders}개의 상품을 자동으로 매칭했습니다!`);
 
     } catch (error) {
       console.error("GPT 분석 실패:", error);

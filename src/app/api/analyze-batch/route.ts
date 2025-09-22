@@ -129,7 +129,7 @@ export async function POST(request: NextRequest) {
 
     const { orders, products }: { orders: OrderText[]; products: Product[] } = await request.json();
 
-    console.log(`단일 배치 처리: ${orders.length}개 주문`);
+    console.log(`단일 배치 처리: ${orders.length}명 주문`);
 
     const analyzedOrders = await processBatch(orders, products);
 
