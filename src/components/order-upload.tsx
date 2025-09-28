@@ -73,6 +73,8 @@ export function OrderUpload() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [batchProgress, setBatchProgress] = useState({ current: 0, total: 0 });
   const [batchStatus, setBatchStatus] = useState("");
+  const [searchQuery, setSearchQuery] = useState<string>("");
+  const [searchResults, setSearchResults] = useState<ProductMatch[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   const { products } = useProducts();
@@ -354,6 +356,22 @@ export function OrderUpload() {
       .slice(0, 5);
   };
 
+  // 검색 함수
+  const handleSearch = () => {
+    if (searchQuery.trim().length < 2) {
+      toast.error("최소 2글자 이상 입력해주세요.");
+      return;
+    }
+    
+    console.log('검색 쿼리:', searchQuery.trim());
+    const matches = findProductMatches(searchQuery.trim());
+    
+    console.log('검색 결과 수:', matches.length);
+    console.log('검색 결과:', matches.map(m => ({ name: m.product.name, similarity: m.similarity })));
+    
+    setSearchResults(matches);
+  };
+
   // 텍스트 선택 핸들러
   const handleTextSelection = (text: string, nickname: string) => {
     if (text.trim().length < 2) {
@@ -366,12 +384,14 @@ export function OrderUpload() {
     
     setSelectedText(text.trim());
     setSelectedNickname(nickname);
+    setSearchQuery(text.trim()); // 검색 입력창에 선택된 텍스트 설정
     const matches = findProductMatches(text.trim());
     
     console.log('매칭된 상품 수:', matches.length);
     console.log('매칭 결과:', matches.map(m => ({ name: m.product.name, similarity: m.similarity })));
     
     setProductMatches(matches);
+    setSearchResults(matches); // 검색 결과도 초기화
     setShowProductSelection(true);
   };
 
@@ -391,6 +411,8 @@ export function OrderUpload() {
     setSelectedText("");
     setSelectedNickname("");
     setProductMatches([]);
+    setSearchQuery("");
+    setSearchResults([]);
     
     toast.success("최종주문목록에 추가되었습니다.");
   };
@@ -600,24 +622,54 @@ export function OrderUpload() {
       }, {} as Record<string, FinalOrderItem[]>);
 
       // Google Sheets 형식으로 변환 (원본주문내역 + 최종주문 수량)
-      const orderData = Object.entries(groupedByNickname).map(([nickname, orders]) => ({
-        nickname,
-        orderText: orders.map(order => order.orderText).join('\n'),
-        notes: '',
-        products: finalOrdersByNickname[nickname] ? finalOrdersByNickname[nickname].map(order => ({
-          name: order.productName,
-          quantity: order.quantity,
-          price: order.price,
-          total: order.total
-        })) : []
-      }));
+      // 최종주문목록에 내용이 있는 닉네임만 필터링
+      const allNicknames = Object.keys(groupedByNickname);
+      const filteredNicknames: string[] = [];
+      const excludedNicknames: string[] = [];
+      
+      const orderData = Object.entries(groupedByNickname)
+        .filter(([nickname]) => {
+          // 최종주문목록에 해당 닉네임의 데이터가 있고, 실제 상품이 있는지 확인
+          const hasFinalOrders = finalOrdersByNickname[nickname] && 
+                                finalOrdersByNickname[nickname].length > 0 &&
+                                finalOrdersByNickname[nickname].some(order => order.quantity > 0);
+          
+          if (hasFinalOrders) {
+            filteredNicknames.push(nickname);
+          } else {
+            excludedNicknames.push(nickname);
+          }
+          
+          return hasFinalOrders;
+        })
+        .map(([nickname, orders]) => ({
+          nickname,
+          orderText: orders.map(order => order.orderText).join('\n'),
+          notes: '',
+          products: finalOrdersByNickname[nickname] ? finalOrdersByNickname[nickname].map(order => ({
+            name: order.productName,
+            quantity: order.quantity,
+            price: order.price,
+            total: order.total
+          })) : []
+        }));
+      
+      console.log('=== 필터링 결과 ===');
+      console.log(`전체 닉네임 수: ${allNicknames.length}`);
+      console.log(`등록될 닉네임: ${filteredNicknames.join(', ')}`);
+      console.log(`제외된 닉네임 (최종주문목록 없음): ${excludedNicknames.join(', ')}`);
       
       console.log('=== 구글시트 전송 데이터 ===');
       console.log('전송할 주문 데이터:', JSON.stringify(orderData, null, 2));
       console.log('전송할 상품 데이터:', allProducts.length > 0 ? allProducts : products);
       
       await writeOrdersToSheet(date, orderData, allProducts.length > 0 ? allProducts : products);
-      toast.success(`구글 스프레드시트에 ${parsedOrders.length}건의 주문이 등록되었습니다!`);
+      
+      if (excludedNicknames.length > 0) {
+        toast.success(`구글 스프레드시트에 ${orderData.length}건의 주문이 등록되었습니다! (최종주문목록이 없는 ${excludedNicknames.length}건 제외)`);
+      } else {
+        toast.success(`구글 스프레드시트에 ${orderData.length}건의 주문이 등록되었습니다!`);
+      }
       
       setProgress(100);
       setCurrentStep("구글시트 등록 완료!");
@@ -1098,10 +1150,37 @@ export function OrderUpload() {
                 </p>
               </div>
               
-              {productMatches.length > 0 ? (
+              {/* 검색 입력창 */}
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">상품 검색</Label>
+                <div className="flex gap-2">
+                  <Input
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="상품명을 입력하세요"
+                    className="flex-1"
+                    onKeyPress={(e) => {
+                      if (e.key === 'Enter') {
+                        handleSearch();
+                      }
+                    }}
+                  />
+                  <Button
+                    onClick={handleSearch}
+                    className="px-4"
+                  >
+                    검색
+                  </Button>
+                </div>
+              </div>
+              
+              {/* 검색 결과 또는 초기 매칭 결과 표시 */}
+              {(searchResults.length > 0 ? searchResults : productMatches).length > 0 ? (
                 <div className="space-y-2">
-                  <Label className="text-sm font-medium">유사한 상품 (최대 5개)</Label>
-                  {productMatches.map((match, index) => (
+                  <Label className="text-sm font-medium">
+                    {searchResults.length > 0 ? '검색 결과' : '유사한 상품 (최대 5개)'}
+                  </Label>
+                  {(searchResults.length > 0 ? searchResults : productMatches).map((match, index) => (
                     <div
                       key={index}
                       className="p-3 border rounded cursor-pointer transition-colors border-gray-200 hover:border-gray-300"
@@ -1125,7 +1204,9 @@ export function OrderUpload() {
                 </div>
               ) : (
                 <div className="text-center py-4">
-                  <p className="text-muted-foreground">유사한 상품을 찾을 수 없습니다.</p>
+                  <p className="text-muted-foreground">
+                    {searchResults.length === 0 && searchQuery ? '검색 결과가 없습니다.' : '유사한 상품을 찾을 수 없습니다.'}
+                  </p>
                                 </div>
                               )}
               
@@ -1137,6 +1218,8 @@ export function OrderUpload() {
                     setSelectedText("");
                     setSelectedNickname("");
                     setProductMatches([]);
+                    setSearchQuery("");
+                    setSearchResults([]);
                   }}
                 >
                   닫기
