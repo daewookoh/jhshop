@@ -203,6 +203,7 @@ export async function POST(request: NextRequest) {
           return a.name.localeCompare(b.name, 'ko-KR')
         })
     }
+
     
     // 헤더 행 생성 (4줄 구조)
     const createHeaderRows = (products: Product[]): string[][] => {
@@ -354,22 +355,21 @@ export async function POST(request: NextRequest) {
     const orderRows = formatOrderData(orders, products)
     console.log('포맷팅된 주문 행:', orderRows);
     
-    // 총 주문수 라인 생성 (수식으로 계산)
+    // 총 주문수 라인 생성 (수식으로 계산) - 임시로 생성
     const productColumns = headerRows[0].length - 3 // 헤더에서 주문자, 원본주문, 비고 제외
     const dataStartRow = headerRows.length + 2; // 헤더 다음 + 총주문수 행 다음부터 시작 (D6부터)
     const dataEndRow = dataStartRow + orderRows.length - 1; // 주문 데이터 끝
     
-    // 각 상품별 총 주문수 계산 수식
+    // 각 상품별 총 주문수 계산 수식 (임시)
     const totalOrderFormulas = [];
     for (let i = 0; i < productColumns; i++) {
       const columnLetter = getColumnLetter(4 + i); // D, E, F, ... (주문자, 원본주문, 비고 제외)
       const formula = `=SUM(${columnLetter}${dataStartRow}:${columnLetter}${dataEndRow})`;
       totalOrderFormulas.push(formula);
-      console.log(`총 주문수 수식 ${i + 1}: ${formula}`); // 디버깅용
     }
     const totalOrderRow = ['총 주문수', '', '', ...totalOrderFormulas]
     
-    // 총 판매액 라인 생성 (판매가 × 주문수)
+    // 총 판매액 라인 생성 (판매가 × 주문수) - 임시로 생성
     const totalSalesFormulas = [];
     for (let i = 0; i < productColumns; i++) {
       const columnLetter = getColumnLetter(4 + i); // D, E, F, ...
@@ -379,8 +379,100 @@ export async function POST(request: NextRequest) {
     }
     const totalSalesDataRow = ['총 판매액', '', '', ...totalSalesFormulas]
     
+    // 실제 주문 데이터에서 상품별 주문수량을 계산하여 컬럼 정렬
+    const sortColumnsByOrderQuantity = (data: string[][], orders: OrderData[]) => {
+      // 상품별 주문수량 계산 - orderRows에서 직접 계산
+      const productOrderCounts = new Map<string, number>()
+      
+      // orderRows에서 각 상품의 주문수량 계산
+      const headerRowCount = headerRows.length
+      const orderDataStartRow = headerRowCount + 1 // 주문 데이터 시작 행
+      const orderDataEndRow = data.length - 2 // 총 판매액 행 제외
+      
+      console.log(`주문 데이터 행 범위: ${orderDataStartRow} ~ ${orderDataEndRow}`)
+      
+      for (let rowIndex = orderDataStartRow; rowIndex < orderDataEndRow; rowIndex++) {
+        const row = data[rowIndex]
+        if (row && row.length > 3) {
+          for (let colIndex = 3; colIndex < row.length - 1; colIndex++) { // 마지막 컬럼(비고) 제외
+            const quantity = row[colIndex]
+            if (quantity && quantity !== '' && quantity !== '0' && !isNaN(Number(quantity))) {
+              const productName = data[0][colIndex] // 헤더에서 상품명 가져오기
+              const currentCount = productOrderCounts.get(productName) || 0
+              productOrderCounts.set(productName, currentCount + Number(quantity))
+            }
+          }
+        }
+      }
+      
+      console.log('상품별 주문수량:', Object.fromEntries(productOrderCounts))
+      
+      // 상품 컬럼들의 주문수량을 기준으로 정렬
+      const productTotals = []
+      for (let i = 3; i < data[0].length - 1; i++) { // 마지막 컬럼(비고) 제외
+        // 헤더에서 상품명 가져오기
+        const productName = data[0][i] // 첫 번째 행(상품명 헤더)
+        const orderCount = productOrderCounts.get(productName) || 0
+        productTotals.push({ index: i, total: orderCount, name: productName })
+      }
+      
+      // 주문수량 기준으로 정렬 (많은 순, 0인 경우 가나다 순)
+      productTotals.sort((a, b) => {
+        if (a.total !== b.total) {
+          return b.total - a.total // 주문수량 많은 순
+        }
+        // 주문수량이 같은 경우 (특히 0인 경우) 가나다 순으로 정렬
+        return a.name.localeCompare(b.name, 'ko-KR')
+      })
+      
+      console.log('정렬된 상품 순서:', productTotals.map(p => ({ name: p.name, total: p.total })))
+      
+      // 정렬된 순서로 컬럼 재배치
+      const reorderedData = data.map(row => {
+        const newRow = [...row.slice(0, 3)] // 주문자, 원본주문, 비고는 그대로
+        productTotals.forEach(({ index }) => {
+          newRow.push(row[index]) // 상품 컬럼들을 정렬된 순서로 추가
+        })
+        newRow.push(row[row.length - 1]) // 마지막 비고 컬럼 추가
+        return newRow
+      })
+      
+      return reorderedData
+    }
+    
     // 모든 데이터를 스프레드시트에 작성 (헤더 + 총주문수 + 주문데이터 + 총주문수 + 총판매액)
     const allData = [...headerRows, totalOrderRow, ...orderRows, totalOrderRow, totalSalesDataRow]
+    
+    // 주문수량 기준으로 컬럼 정렬
+    const sortedAllData = sortColumnsByOrderQuantity(allData, orders)
+    
+    // 정렬 후 수식 재생성
+    const regenerateFormulas = (data: string[][]) => {
+      const headerRowCount = headerRows.length
+      const totalOrderRowIndex = headerRowCount
+      const totalSalesRowIndex = data.length - 1
+      
+      // 총 주문수 행의 수식 재생성
+      for (let i = 3; i < data[totalOrderRowIndex].length - 1; i++) {
+        const columnLetter = getColumnLetter(i + 1) // 0-based이므로 +1
+        const formula = `=SUM(${columnLetter}${dataStartRow}:${columnLetter}${dataEndRow})`
+        data[totalOrderRowIndex][i] = formula
+      }
+      
+      // 총 판매액 행의 수식 재생성
+      for (let i = 3; i < data[totalSalesRowIndex].length - 1; i++) {
+        const columnLetter = getColumnLetter(i + 1) // 0-based이므로 +1
+        const priceRow = 3 // 판매가가 있는 행 (0-based이므로 3)
+        const totalOrderRowNum = totalOrderRowIndex + 1 // 1-based 행 번호
+        const formula = `=${columnLetter}${priceRow}*${columnLetter}${totalOrderRowNum}`
+        data[totalSalesRowIndex][i] = formula
+      }
+      
+      return data
+    }
+    
+    // 수식 재생성
+    const finalData = regenerateFormulas(sortedAllData)
     
     // 데이터 작성 (숫자 인식을 위해 USER_ENTERED 사용)
     await sheets.spreadsheets.values.update({
@@ -388,7 +480,7 @@ export async function POST(request: NextRequest) {
       range: `${sheetName}!A1`,
       valueInputOption: 'USER_ENTERED',
       requestBody: {
-        values: allData
+        values: finalData
       }
     })
     
