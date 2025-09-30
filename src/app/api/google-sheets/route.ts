@@ -408,7 +408,7 @@ export async function POST(request: NextRequest) {
       console.log('상품별 주문수량:', Object.fromEntries(productOrderCounts))
       
       // 상품 컬럼들의 주문수량을 기준으로 정렬
-      const productTotals = []
+      const productTotals: { index: number; total: number; name: string }[] = []
       for (let i = 3; i < data[0].length - 1; i++) { // 마지막 컬럼(비고) 제외
         // 헤더에서 상품명 가져오기
         const productName = data[0][i] // 첫 번째 행(상품명 헤더)
