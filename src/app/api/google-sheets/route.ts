@@ -259,15 +259,16 @@ export async function POST(request: NextRequest) {
             row.push('')
           }
           
-          // 원본주문 (상품명과 수량이 여러 줄에 걸쳐 있을 때 합치고, 여러 상품을 분리)
+          // 원본주문 (줄바꿈을 유지하면서 정리)
           const processedOrderText = order.orderText
             .replace(/\r\n/g, '\n')  // Windows 줄바꿈을 Unix 줄바꿈으로 통일
             .replace(/\r/g, '\n')    // Mac 줄바꿈을 Unix 줄바꿈으로 통일
             .split('\n')             // 줄바꿈으로 분리
             .map(line => line.trim()) // 각 줄의 앞뒤 공백 제거
             .filter(line => line.length > 0) // 빈 줄 제거
-            .join(' ')               // 모든 줄을 공백으로 연결하여 하나의 줄로 만들기
-            .replace(/\s+/g, ' ')    // 연속된 공백을 하나의 공백으로 정리
+            .join('\n')              // 줄바꿈을 유지하여 다시 연결
+            .replace(/\n\s+/g, '\n') // 줄바꿈 후 불필요한 공백 제거
+            .replace(/\s+\n/g, '\n') // 줄바꿈 전 불필요한 공백 제거
             .trim();                 // 전체 앞뒤 공백 제거
             
           // 여러 상품이 한 줄에 있을 때 분리 (숫자 + "개"로 끝나는 패턴을 기준으로 분리)
@@ -295,6 +296,18 @@ export async function POST(request: NextRequest) {
           } else {
             // 분리할 수 없으면 원본 유지
             finalOrderText = processedOrderText;
+          }
+          
+          // 구글 시트에서 줄바꿈을 표시하기 위해 \n을 구글시트 수식으로 변환
+          // 여러 줄이 있는 경우에만 수식으로 변환
+          if (finalOrderText.includes('\n')) {
+            // 첫 번째 줄을 기본 텍스트로, 나머지는 CHAR(10)으로 연결
+            const lines = finalOrderText.split('\n')
+            if (lines.length > 1) {
+              const firstLine = lines[0]
+              const remainingLines = lines.slice(1).join('CHAR(10)')
+              finalOrderText = `="${firstLine}"&CHAR(10)&"${remainingLines}"`
+            }
           }
           
           row.push(finalOrderText)
