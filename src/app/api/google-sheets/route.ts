@@ -28,7 +28,7 @@ interface RequestPayload {
 }
 
 // Google Sheets API 설정
-const SPREADSHEET_ID = '14f29cGpEAITHa8gb60JcyXMONPj0KCt7FKKuj1gYrm8'
+const SPREADSHEET_ID = process.env.SPREADSHEET_ID
 const CLIENT_EMAIL = 'admin-59@jaehyung-shop.iam.gserviceaccount.com'
 const PRIVATE_KEY = `-----BEGIN PRIVATE KEY-----
 MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQDSHxw4VRXFO00c
@@ -391,6 +391,7 @@ export async function POST(request: NextRequest) {
       const totalOrderRowNum = headerRows.length + 1; // 총 주문수 행
       totalSalesFormulas.push(`=${columnLetter}${priceRow}*${columnLetter}${totalOrderRowNum}`);
     }
+    
     const totalSalesDataRow = ['총 판매액', '', '', ...totalSalesFormulas]
     
     // 실제 주문 데이터에서 상품별 주문수량을 계산하여 컬럼 정렬
@@ -474,13 +475,17 @@ export async function POST(request: NextRequest) {
       }
       
       // 총 판매액 행의 수식 재생성
+      const salesFormulas = [];
       for (let i = 3; i < data[totalSalesRowIndex].length - 1; i++) {
         const columnLetter = getColumnLetter(i + 1) // 0-based이므로 +1
         const priceRow = 3 // 판매가가 있는 행 (0-based이므로 3)
         const totalOrderRowNum = totalOrderRowIndex + 1 // 1-based 행 번호
         const formula = `=${columnLetter}${priceRow}*${columnLetter}${totalOrderRowNum}`
         data[totalSalesRowIndex][i] = formula
+        salesFormulas.push(formula)
       }
+      
+      // 총 판매액 합계는 제거 (원래 상태로 복원)
       
       return data
     }
@@ -1005,6 +1010,7 @@ export async function POST(request: NextRequest) {
     const data = {
       success: true,
       sheetName,
+      spreadsheetId: SPREADSHEET_ID,
       message: '주문 데이터가 성공적으로 작성되었습니다.'
     }
 

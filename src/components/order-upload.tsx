@@ -76,6 +76,7 @@ export function OrderUpload() {
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [searchResults, setSearchResults] = useState<ProductMatch[]>([]);
   const [orderNotes, setOrderNotes] = useState<Record<string, string>>({});
+  const [isExcelProcessing, setIsExcelProcessing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   const { products } = useProducts();
@@ -431,6 +432,112 @@ export function OrderUpload() {
       ...prev,
       [nickname]: notes
     }));
+  };
+
+  // 엑셀 파일 업로드 및 처리
+  const handleExcelUpload = async () => {
+    if (finalOrders.length === 0) {
+      toast.error("저장할 주문이 없습니다.");
+      return;
+    }
+
+    // 파일 선택창 열기
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.xlsx,.xls';
+    input.style.display = 'none';
+    
+    input.onchange = async (event) => {
+      const file = (event.target as HTMLInputElement).files?.[0];
+      if (!file) return;
+      
+      toast.success("엑셀 파일이 선택되었습니다. 처리 중...");
+      
+      // 파일이 선택되면 바로 처리 시작
+      await processExcelFile(file);
+    };
+    
+    document.body.appendChild(input);
+    input.click();
+    document.body.removeChild(input);
+  };
+
+  // 엑셀 파일 처리 함수
+  const processExcelFile = async (file: File) => {
+    setIsExcelProcessing(true);
+    setCurrentStep("구글시트 작성 중...");
+
+    try {
+      // 주문 데이터를 닉네임별로 그룹화
+      const groupedByNickname = finalOrders.reduce((acc, order) => {
+        if (!acc[order.nickname]) {
+          acc[order.nickname] = [];
+        }
+        acc[order.nickname].push(order);
+        return acc;
+      }, {} as Record<string, FinalOrderItem[]>);
+
+      // API로 전송할 데이터 준비
+      const orderData = Object.entries(groupedByNickname).map(([nickname, orders]) => {
+        // 원본 주문 데이터에서 orderText 가져오기
+        const originalOrders = parsedOrders.filter(p => p.nickname === nickname);
+        const orderTexts = originalOrders.map(order => order.orderText).filter(text => text.trim() !== '');
+        
+        return {
+          nickname,
+          orderText: orderTexts.join('\n'),
+          notes: orderNotes[nickname] || '',
+          products: orders.map(order => ({
+            name: order.productName,
+            quantity: order.quantity,
+            price: order.price,
+            total: order.total
+          }))
+        };
+      });
+
+      const formData = new FormData();
+      formData.append('excelFile', file);
+      formData.append('date', date);
+      formData.append('orders', JSON.stringify(orderData));
+      formData.append('products', JSON.stringify(products));
+
+      setCurrentStep("엑셀 파일 생성 중...");
+
+      const response = await fetch('/api/excel-export', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error('엑셀 파일 생성 API 오류:', errorData);
+        throw new Error(`엑셀 파일 생성에 실패했습니다: ${errorData.details || errorData.error || '알 수 없는 오류'}`);
+      }
+
+      // 파일 다운로드
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${date}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+
+      toast.success("구글시트와 엑셀 파일이 생성되었습니다.");
+      setCurrentStep("완료!");
+
+    } catch (error) {
+      console.error('파일 생성 실패:', error);
+      toast.error("파일 생성에 실패했습니다.");
+      setCurrentStep("파일 생성 실패");
+      setIsError(true);
+      setError("파일 생성 중 오류가 발생했습니다.");
+    } finally {
+      setIsExcelProcessing(false);
+    }
   };
 
   // 수량 조정 함수
@@ -1254,11 +1361,11 @@ export function OrderUpload() {
       {parsedOrders.length > 0 && (
         <div className="flex justify-center pt-4">
           <Button
-            onClick={handleSaveToGoogleSheets}
-            disabled={isProcessing}
+            onClick={handleExcelUpload}
+            disabled={isExcelProcessing}
             className="bg-green-600 hover:bg-green-700 text-white min-w-[200px]"
           >
-            {isProcessing ? "구글시트 작성 중..." : `구글시트 작성 (${parsedOrders.length}건)`}
+            {isExcelProcessing ? "시트&엑셀 작성 중..." : `시트&엑셀 작성 (${parsedOrders.length}건)`}
           </Button>
                   </div>
           )}
