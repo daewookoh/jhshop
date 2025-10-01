@@ -159,7 +159,8 @@ export async function POST(request: NextRequest) {
         requests: [{
           addSheet: {
             properties: {
-              title: sheetName
+              title: sheetName,
+              index: 0  // 첫 번째 위치에 시트 생성 (0부터 시작하므로 0이 첫 번째)
             }
           }
         }]

@@ -75,6 +75,7 @@ export function OrderUpload() {
   const [batchStatus, setBatchStatus] = useState("");
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [searchResults, setSearchResults] = useState<ProductMatch[]>([]);
+  const [orderNotes, setOrderNotes] = useState<Record<string, string>>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   const { products } = useProducts();
@@ -424,6 +425,14 @@ export function OrderUpload() {
     toast.success("주문이 삭제되었습니다.");
   };
 
+  // 비고 입력 처리
+  const handleNotesChange = (nickname: string, notes: string) => {
+    setOrderNotes(prev => ({
+      ...prev,
+      [nickname]: notes
+    }));
+  };
+
   // 수량 조정 함수
   const handleQuantityChange = (id: string, change: number) => {
     setFinalOrders(prev => prev.map(order => {
@@ -645,7 +654,7 @@ export function OrderUpload() {
         .map(([nickname, orders]) => ({
           nickname,
           orderText: orders.map(order => order.orderText).join('\n'),
-          notes: '',
+          notes: orderNotes[nickname] || '',
           products: finalOrdersByNickname[nickname] ? finalOrdersByNickname[nickname].map(order => ({
             name: order.productName,
             quantity: order.quantity,
@@ -1065,9 +1074,20 @@ export function OrderUpload() {
                                 }}
                               >{order.orderText}</span>
                               </div>
-                          ))}
+                            ))}
+                              </div>
+                              
+                              {/* 비고 입력 영역 */}
+                              <div className="mt-2">
+                                <textarea
+                                  value={orderNotes[nickname] || ''}
+                                  onChange={(e) => handleNotesChange(nickname, e.target.value)}
+                                  placeholder="비고"
+                                  className="w-full p-2 text-sm border rounded resize-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                  rows={2}
+                                />
+                              </div>
                             </div>
-                          </div>
                           
                           {/* 구분선 (모바일: 가로선, 데스크톱: 세로선) */}
                           <div className="w-full h-px lg:w-px lg:h-full bg-border"></div>
