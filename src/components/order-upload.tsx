@@ -1357,9 +1357,16 @@ export function OrderUpload() {
             </div>
           )}
 
-      {/* 구글시트 작성 버튼 */}
+      {/* 구글시트 작성 버튼들 */}
       {parsedOrders.length > 0 && (
-        <div className="flex justify-center pt-4">
+        <div className="flex justify-center gap-4 pt-4">
+          <Button
+            onClick={handleSaveToGoogleSheets}
+            disabled={isProcessing}
+            className="bg-blue-600 hover:bg-blue-700 text-white min-w-[200px]"
+          >
+            {isProcessing ? "시트 작성 중..." : `시트만 작성 (${parsedOrders.length}건)`}
+          </Button>
           <Button
             onClick={handleExcelUpload}
             disabled={isExcelProcessing}
