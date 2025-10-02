@@ -201,15 +201,7 @@ export async function POST(request: NextRequest) {
               finalOrderText = processedOrderText;
             }
             
-            // Google Sheets에서 줄바꿈을 표시하기 위해 \n을 구글시트 수식으로 변환
-            if (finalOrderText.includes('\n')) {
-              const lines = finalOrderText.split('\n')
-              if (lines.length > 1) {
-                const firstLine = lines[0]
-                const remainingLines = lines.slice(1).join('CHAR(10)')
-                finalOrderText = `="${firstLine}"&CHAR(10)&"${remainingLines}"`
-              }
-            }
+            // 엑셀에서는 실제 줄바꿈 문자를 그대로 사용 (구글시트와 달리 CHAR(10) 수식 불필요)
             row.push(finalOrderText)
           }
           
@@ -368,7 +360,18 @@ export async function POST(request: NextRequest) {
         salesFormulas.push(formula)
       }
       
-      // 총 판매액 합계는 제거 (원래 상태로 복원)
+      // B행(원본주문 열)에 전체 총 판매액 합계 수식 추가 (구글시트 API와 동일)
+      const totalSalesStartColumn = 4 // D열부터 시작 (A=1, B=2, C=3, D=4)
+      const totalSalesEndColumn = data[totalSalesRowIndex].length - 2 // 마지막 상품 컬럼 (비고 제외)
+      const totalSalesStartLetter = getColumnLetter(totalSalesStartColumn)
+      const totalSalesEndLetter = getColumnLetter(totalSalesEndColumn)
+      const totalSalesFormula = `=SUM(${totalSalesStartLetter}${totalSalesRowIndex + 1}:${totalSalesEndLetter}${totalSalesRowIndex + 1})`
+      
+      console.log(`엑셀 전체 총 판매액 수식 생성: ${totalSalesFormula}`) // 디버깅용
+      console.log(`상품 컬럼 수: ${data[totalSalesRowIndex].length - 3}, 시작 컬럼: ${totalSalesStartColumn}(${totalSalesStartLetter}), 끝 컬럼: ${totalSalesEndColumn}(${totalSalesEndLetter})`)
+      
+      // B행(원본주문 열)에 총 판매액 합계 수식 설정
+      data[totalSalesRowIndex][1] = totalSalesFormula // 원본주문 열은 인덱스 1
       
       return data
     }
@@ -392,6 +395,8 @@ export async function POST(request: NextRequest) {
     
     // 수식과 숫자 셀들을 올바르게 설정
     const range = XLSX.utils.decode_range(googleWorksheet['!ref'] || 'A1');
+    const headerRowCountForFormatting = 4; // 헤더 행 수 (상품명, 판매일, 판매가, 재고)
+    
     for (let row = 0; row <= range.e.r; row++) {
       for (let col = 0; col <= range.e.c; col++) {
         const cellAddress = XLSX.utils.encode_cell({ r: row, c: col });
@@ -405,11 +410,37 @@ export async function POST(request: NextRequest) {
               cell.f = formula;
               delete cell.v; // v 속성 제거하여 수식으로 인식되도록 함
               console.log(`수식 설정: ${cellAddress} = ${cell.f}`);
+              
+              // 숫자 관련 컬럼(D열 이후)과 총 판매액 행의 B열 수식에 숫자 포맷 적용
+              // 단, 판매일 행(2행, 인덱스 1)은 제외
+              if ((col >= 3 && row !== 1) || (row === range.e.r && col === 1)) { // D열 이후(판매일 행 제외) 또는 총 판매액 행의 B열
+                cell.z = '#,##0'; // 천 단위 구분자 포맷
+                cell.s = {
+                  ...cell.s,
+                  numFmt: '#,##0' // 추가적인 숫자 포맷 설정
+                };
+              }
             }
           } else if (cell.v.match(/^\d+$/)) {
             // 숫자만 있는 경우 숫자로 변환
             cell.v = parseInt(cell.v, 10);
             cell.t = 'n'; // 숫자 타입으로 설정
+            
+            // 숫자 관련 컬럼(D열 이후)에만 숫자 포맷 적용
+            // 단, 판매일 행(2행, 인덱스 1)은 제외
+            if (col >= 3 && row !== 1) { // D열(인덱스 3) 이후부터, 판매일 행 제외
+              cell.z = '#,##0'; // 천 단위 구분자 포맷
+            }
+          }
+        } else if (cell && typeof cell.v === 'number') {
+          // 이미 숫자인 경우 - 판매가 행(3행, 인덱스 2)과 숫자 관련 컬럼에만 포맷 적용
+          // 판매일 행(2행, 인덱스 1)은 날짜이므로 제외
+          if ((row === 2 && col >= 3) || (row > headerRowCountForFormatting && col >= 3)) {
+            cell.z = '#,##0'; // 천 단위 구분자 포맷
+            cell.s = {
+              ...cell.s,
+              numFmt: '#,##0' // 추가적인 숫자 포맷 설정
+            };
           }
         }
       }
@@ -419,13 +450,13 @@ export async function POST(request: NextRequest) {
     const finalProductColumns = finalData[0].length - 3; // 주문자, 원본주문, 비고 제외
     const colWidths = [
       { wch: 15 }, // 주문자
-      { wch: 80 }, // 원본주문 (더 넓게 설정)
+      { wch: 100 }, // 원본주문 (더 넓게 설정하여 줄바꿈 효과 극대화)
       { wch: 20 }, // 비고
       ...Array(finalProductColumns).fill({ wch: 15 }) // 상품 컬럼들
     ];
     googleWorksheet['!cols'] = colWidths;
     
-    // 원본주문 컬럼(B열)에 줄바꿈 설정
+    // 원본주문 컬럼(B열)에 줄바꿈 설정 및 자동 줄바꿈 활성화
     for (let row = 1; row <= range.e.r + 1; row++) {
       const cellAddress = XLSX.utils.encode_cell({ r: row - 1, c: 1 }); // B열 (인덱스 1)
       if (googleWorksheet[cellAddress]) {
@@ -434,11 +465,21 @@ export async function POST(request: NextRequest) {
           alignment: {
             ...googleWorksheet[cellAddress].s?.alignment,
             wrapText: true,
-            vertical: 'top'
+            vertical: 'top',
+            horizontal: 'left',
+            shrinkToFit: false,
+            indent: 0
           }
         };
       }
     }
+    
+    // 워크시트 레벨에서도 줄바꿈 설정
+    if (!googleWorksheet['!margins']) {
+      googleWorksheet['!margins'] = {};
+    }
+    googleWorksheet['!margins'].left = 0.7;
+    googleWorksheet['!margins'].right = 0.7;
     
     // 첫 5열 고정 (A~E열)
     googleWorksheet['!freeze'] = { xSplit: 5, ySplit: 0 };
@@ -472,14 +513,16 @@ export async function POST(request: NextRequest) {
       XLSX.utils.book_append_sheet(newWorkbook, worksheet, finalSheetName)
     })
 
-    // 엑셀 파일 생성 (안전한 옵션 사용)
+    // 엑셀 파일 생성 (숫자 포맷을 위해 셀 스타일 활성화)
     const finalExcelBuffer = XLSX.write(newWorkbook, { 
       bookType: 'xlsx', 
       type: 'array',
       compression: false, // 압축 비활성화로 안정성 향상
-      cellStyles: false, // 셀 스타일 비활성화
-      cellNF: false, // 숫자 포맷 비활성화
-      cellHTML: false // HTML 변환 비활성화
+      cellStyles: true, // 셀 스타일 활성화 (숫자 포맷을 위해 필요)
+      cellNF: true, // 숫자 포맷 활성화
+      cellHTML: false, // HTML 변환 비활성화
+      cellDates: true, // 날짜 셀 활성화
+      cellFormula: true // 수식 활성화
     })
     
     // 파일명 생성
