@@ -49,11 +49,34 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: '구글시트 ID가 설정되지 않았습니다.' }, { status: 500 });
     }
 
-    // 먼저 구글시트에 데이터 작성
+    // 주문수량이 있는 상품만 필터링하는 함수
+    const getProductsWithOrders = (products: Product[], orders: OrderData[]): Product[] => {
+      const productsWithOrders = new Set<string>();
+      
+      // 주문에서 실제로 주문된 상품명들을 수집
+      orders.forEach(order => {
+        if (order.products && Array.isArray(order.products) && order.products.length > 0) {
+          order.products.forEach(p => {
+            if (p.quantity > 0) {
+              productsWithOrders.add(p.name);
+            }
+          });
+        }
+      });
+      
+      // 주문된 상품만 필터링
+      return products.filter(p => productsWithOrders.has(p.name));
+    };
+
+    // 주문수량이 있는 상품만 필터링
+    const productsWithOrders = getProductsWithOrders(products, orders);
+    console.log('주문수량이 있는 상품들:', productsWithOrders.map(p => p.name));
+    
+    // 먼저 구글시트에 데이터 작성 (주문수량이 있는 상품만 전달)
     const googleSheetsResponse = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/api/google-sheets`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ date, orders, products })
+      body: JSON.stringify({ date, orders, products: productsWithOrders })
     });
 
     if (!googleSheetsResponse.ok) {
@@ -224,12 +247,12 @@ export async function POST(request: NextRequest) {
       return rows
     }
 
-    // 헤더 행들 생성 (4줄) - 구글시트 API와 동일
-    const headerRows = createHeaderRows(products)
+    // 헤더 행들 생성 (4줄) - 주문수량이 있는 상품만 사용
+    const headerRows = createHeaderRows(productsWithOrders)
     
-    // 주문 데이터 포맷팅 - 구글시트 API와 동일
+    // 주문 데이터 포맷팅 - 주문수량이 있는 상품만 사용
     console.log('API에서 받은 주문 데이터:', orders);
-    const orderRows = formatOrderData(orders, products)
+    const orderRows = formatOrderData(orders, productsWithOrders)
     console.log('포맷팅된 주문 행:', orderRows);
     
     // 총 주문수 라인 생성 (수식으로 계산) - 구글시트 API와 완전히 동일
@@ -319,7 +342,7 @@ export async function POST(request: NextRequest) {
     // 모든 데이터를 스프레드시트에 작성 (헤더 + 총주문수 + 주문데이터 + 총주문수 + 총판매액) - 구글시트 API와 완전히 동일
     const allData = [...headerRows, totalOrderRow, ...orderRows, totalOrderRow, totalSalesDataRow]
     
-    // 주문수량 기준으로 컬럼 정렬 - 구글시트 API와 동일
+    // 주문수량 기준으로 컬럼 정렬 - 주문수량이 있는 상품만 사용
     const sortedAllData = sortColumnsByOrderQuantity(allData, orders)
     
     // 정렬 후 수식 재생성 - 구글시트 API와 완전히 동일
@@ -362,13 +385,13 @@ export async function POST(request: NextRequest) {
       
       // B행(원본주문 열)에 전체 총 판매액 합계 수식 추가 (구글시트 API와 동일)
       const totalSalesStartColumn = 4 // D열부터 시작 (A=1, B=2, C=3, D=4)
-      const totalSalesEndColumn = data[totalSalesRowIndex].length - 2 // 마지막 상품 컬럼 (비고 제외)
+      const totalSalesEndColumn = 3 + productColumns // 마지막 상품 컬럼 (D=4부터 시작하므로 3+productColumns)
       const totalSalesStartLetter = getColumnLetter(totalSalesStartColumn)
       const totalSalesEndLetter = getColumnLetter(totalSalesEndColumn)
       const totalSalesFormula = `=SUM(${totalSalesStartLetter}${totalSalesRowIndex + 1}:${totalSalesEndLetter}${totalSalesRowIndex + 1})`
       
       console.log(`엑셀 전체 총 판매액 수식 생성: ${totalSalesFormula}`) // 디버깅용
-      console.log(`상품 컬럼 수: ${data[totalSalesRowIndex].length - 3}, 시작 컬럼: ${totalSalesStartColumn}(${totalSalesStartLetter}), 끝 컬럼: ${totalSalesEndColumn}(${totalSalesEndLetter})`)
+      console.log(`상품 컬럼 수: ${productColumns}, 시작 컬럼: ${totalSalesStartColumn}(${totalSalesStartLetter}), 끝 컬럼: ${totalSalesEndColumn}(${totalSalesEndLetter})`)
       
       // B행(원본주문 열)에 총 판매액 합계 수식 설정
       data[totalSalesRowIndex][1] = totalSalesFormula // 원본주문 열은 인덱스 1

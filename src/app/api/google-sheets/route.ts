@@ -170,6 +170,29 @@ export async function POST(request: NextRequest) {
     // 새로 생성된 시트의 ID 가져오기
     const newSheetId = addSheetResponse.data.replies?.[0]?.addSheet?.properties?.sheetId || 0
     
+    // 주문수량이 있는 상품만 필터링하는 함수
+    const getProductsWithOrders = (products: Product[], orders: OrderData[]): Product[] => {
+      const productsWithOrders = new Set<string>();
+      
+      // 주문에서 실제로 주문된 상품명들을 수집
+      orders.forEach(order => {
+        if (order.products && Array.isArray(order.products) && order.products.length > 0) {
+          const isFinalOrderProduct = typeof order.products[0] === 'object' && 'quantity' in order.products[0];
+          
+          if (isFinalOrderProduct) {
+            (order.products as any[]).forEach(p => {
+              if (p.quantity > 0) {
+                productsWithOrders.add(p.name);
+              }
+            });
+          }
+        }
+      });
+      
+      // 주문된 상품만 필터링
+      return products.filter(p => productsWithOrders.has(p.name));
+    };
+
     // 상품 목록을 판매일 역순, 상시는 마지막, 같은 판매일은 가나다순으로 정렬
     const sortProductsBySaleDate = (products: Product[]): Product[] => {
       return products
@@ -361,12 +384,16 @@ export async function POST(request: NextRequest) {
       return rows
     }
     
-    // 헤더 행들 생성 (4줄)
-    const headerRows = createHeaderRows(products)
+    // 주문수량이 있는 상품만 필터링
+    const productsWithOrders = getProductsWithOrders(products, orders);
+    console.log('주문수량이 있는 상품들:', productsWithOrders.map(p => p.name));
     
-    // 주문 데이터 포맷팅
+    // 헤더 행들 생성 (4줄) - 주문수량이 있는 상품만 사용
+    const headerRows = createHeaderRows(productsWithOrders)
+    
+    // 주문 데이터 포맷팅 - 주문수량이 있는 상품만 사용
     console.log('API에서 받은 주문 데이터:', orders);
-    const orderRows = formatOrderData(orders, products)
+    const orderRows = formatOrderData(orders, productsWithOrders)
     console.log('포맷팅된 주문 행:', orderRows);
     
     // 총 주문수 라인 생성 (수식으로 계산) - 임시로 생성
@@ -458,7 +485,7 @@ export async function POST(request: NextRequest) {
     // 모든 데이터를 스프레드시트에 작성 (헤더 + 총주문수 + 주문데이터 + 총주문수 + 총판매액)
     const allData = [...headerRows, totalOrderRow, ...orderRows, totalOrderRow, totalSalesDataRow]
     
-    // 주문수량 기준으로 컬럼 정렬
+    // 주문수량 기준으로 컬럼 정렬 - 주문수량이 있는 상품만 사용
     const sortedAllData = sortColumnsByOrderQuantity(allData, orders)
     
     // 정렬 후 수식 재생성
@@ -668,8 +695,8 @@ export async function POST(request: NextRequest) {
       }
     })
     
-    // 6. 상품 컬럼들의 너비를 텍스트 길이에 맞춰 동적 설정
-    const sortedProducts = sortProductsBySaleDate(products)
+    // 6. 상품 컬럼들의 너비를 텍스트 길이에 맞춰 동적 설정 - 주문수량이 있는 상품만 사용
+    const sortedProducts = sortProductsBySaleDate(productsWithOrders)
     
     for (let i = 0; i < productColumns; i++) {
       const productName = sortedProducts[i]?.name || ''
