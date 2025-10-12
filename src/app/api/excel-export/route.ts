@@ -251,10 +251,18 @@ export async function POST(request: NextRequest) {
             }
             
             // 엑셀에서는 실제 줄바꿈 문자를 그대로 사용 (구글시트와 달리 CHAR(10) 수식 불필요)
+            // CHAR(10), CHAR(13) 텍스트를 실제 줄바꿈 문자로 변환
+            finalOrderText = finalOrderText
+              .replace(/CHAR\(10\)/gi, '\n')
+              .replace(/CHAR\(13\)/gi, '\r');
             row.push(finalOrderText)
           }
           
-          row.push(order.notes || '') // 비고 추가
+          // 비고에서도 CHAR(10), CHAR(13) 텍스트를 실제 줄바꿈 문자로 변환
+          const notes = (order.notes || '')
+            .replace(/CHAR\(10\)/gi, '\n')
+            .replace(/CHAR\(13\)/gi, '\r');
+          row.push(notes) // 비고 추가
           
           // 상품별 주문 수량 처리
           sortedProducts.forEach(product => {
