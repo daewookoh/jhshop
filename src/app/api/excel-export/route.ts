@@ -215,6 +215,8 @@ export async function POST(request: NextRequest) {
             row.push('')
           } else {
             const processedOrderText = order.orderText
+              .replace(/CHAR\(10\)/gi, '\n') // CHAR(10) 텍스트를 실제 줄바꿈으로 먼저 변환
+              .replace(/CHAR\(13\)/gi, '\r') // CHAR(13) 텍스트를 실제 줄바꿈으로 먼저 변환
               .replace(/\r\n/g, '\n')
               .replace(/\r/g, '\n')
               .split('\n')
@@ -251,10 +253,6 @@ export async function POST(request: NextRequest) {
             }
             
             // 엑셀에서는 실제 줄바꿈 문자를 그대로 사용 (구글시트와 달리 CHAR(10) 수식 불필요)
-            // CHAR(10), CHAR(13) 텍스트를 실제 줄바꿈 문자로 변환
-            finalOrderText = finalOrderText
-              .replace(/CHAR\(10\)/gi, '\n')
-              .replace(/CHAR\(13\)/gi, '\r');
             row.push(finalOrderText)
           }
           
@@ -447,8 +445,8 @@ export async function POST(request: NextRequest) {
     const finalData = regenerateFormulas(sortedAllData)
     
     // 입금 확인 섹션 추가 전에 주문 데이터 범위 저장
-    const orderDataStartRow = headerRows.length + 1; // 헤더(4줄) + 총주문수(1줄) = 5줄, 0-based이므로 5
-    const orderDataEndRow = finalData.length - 2; // 총주문수 + 총판매액 제외
+    const orderDataStartRow = headerRows.length + 1; // 헤더(4줄) + 총주문수(1줄) = 5줄, 0-based이므로 5 (실제 첫 주문 데이터 행)
+    const orderDataEndRow = finalData.length - 2; // 총판매액 행 바로 전까지 (마지막 주문 데이터 행)
     
     // 입금 확인 섹션 추가 (총판매액 두 칸 아래)
     const emptyRow = new Array(headerRows[0].length).fill('') // 빈 행
@@ -484,22 +482,18 @@ export async function POST(request: NextRequest) {
     // 주문 데이터 개수 계산
     const orderDataCount = orderDataEndRow - orderDataStartRow;
     
-    // 입금 확인 데이터 행 100개 미리 생성 (사용자가 데이터를 붙여넣을 공간)
-    for (let i = 0; i < 100; i++) {
+    // 입금 확인 데이터 행 1000개 미리 생성 (사용자가 데이터를 붙여넣을 공간)
+    for (let i = 0; i < 1000; i++) {
       const currentRow = depositCheckDataStartRow + i;
       const currentRowNum = currentRow + 1; // 1-based
       
       // E열: 주문액 매칭 (A열 보낸분/받는분과 매칭, 공백 제거 후 비교)
       const senderCell = `A${currentRowNum}`;
       
-      // 각 주문자에 대해 IF 조건 생성 (공백 제거 후 비교)
-      let orderAmountMatchFormula = `=IF(${senderCell}="", ""`;
-      for (let j = 0; j < orderDataCount; j++) {
-        const orderRowNum = orderDataStartRow + 1 + j; // 1-based
-        orderAmountMatchFormula += `, IF(SUBSTITUTE(${senderCell}, " ", "")=SUBSTITUTE($A$${orderRowNum}, " ", ""), $B$${orderRowNum}`;
-      }
-      // 모든 IF를 닫고 마지막에 빈 문자열
-      orderAmountMatchFormula += ', ""' + ')'.repeat(orderDataCount) + ')';
+      // 보낸분이 비어있으면 빈 값, 아니면 SUMPRODUCT로 매칭
+      // TRIM과 SUBSTITUTE를 결합하여 공백 제거
+      // Excel 호환성을 위해 --를 사용하여 TRUE/FALSE를 1/0으로 변환
+      const orderAmountMatchFormula = `=IF(${senderCell}="", "", IFERROR(SUMPRODUCT(--(SUBSTITUTE(TRIM($A$${orderDataStartRow + 1}:$A$${orderDataEndRow + 1})," ","")=SUBSTITUTE(TRIM(${senderCell})," ","")), $B$${orderDataStartRow + 1}:$B$${orderDataEndRow + 1}), ""))`;
       
       // F열: 확인 (D열 입금액과 E열 주문액 비교)
       const depositAmountCell = `D${currentRowNum}`;
