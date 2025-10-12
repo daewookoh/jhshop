@@ -315,6 +315,8 @@ export async function POST(request: NextRequest) {
           
           // 원본주문 (줄바꿈을 유지하면서 정리)
           const processedOrderText = order.orderText
+            .replace(/CHAR\(10\)/gi, '\n') // CHAR(10) 텍스트를 실제 줄바꿈으로 먼저 변환
+            .replace(/CHAR\(13\)/gi, '\r') // CHAR(13) 텍스트를 실제 줄바꿈으로 먼저 변환
             .replace(/\r\n/g, '\n')  // Windows 줄바꿈을 Unix 줄바꿈으로 통일
             .replace(/\r/g, '\n')    // Mac 줄바꿈을 Unix 줄바꿈으로 통일
             .split('\n')             // 줄바꿈으로 분리
@@ -355,19 +357,34 @@ export async function POST(request: NextRequest) {
           // 구글 시트에서 줄바꿈을 표시하기 위해 \n을 구글시트 수식으로 변환
           // 여러 줄이 있는 경우에만 수식으로 변환
           if (finalOrderText.includes('\n')) {
-            // 첫 번째 줄을 기본 텍스트로, 나머지는 CHAR(10)으로 연결
             const lines = finalOrderText.split('\n')
             if (lines.length > 1) {
-              const firstLine = lines[0]
-              const remainingLines = lines.slice(1).join('CHAR(10)')
-              finalOrderText = `="${firstLine}"&CHAR(10)&"${remainingLines}"`
+              // 각 줄을 "줄내용"&CHAR(10)& 형태로 연결
+              const formulaParts = lines.map(line => `"${line}"`).join('&CHAR(10)&')
+              finalOrderText = `=${formulaParts}`
             }
           }
           
           row.push(finalOrderText)
           
-          // 비고
-          row.push(order.notes || '')
+          // 비고 (CHAR(10), CHAR(13) 텍스트를 실제 줄바꿈으로 변환 후 구글시트 수식으로 변환)
+          let notes = (order.notes || '')
+            .replace(/CHAR\(10\)/gi, '\n')
+            .replace(/CHAR\(13\)/gi, '\r')
+            .replace(/\r\n/g, '\n')
+            .replace(/\r/g, '\n');
+          
+          // 비고에 줄바꿈이 있으면 구글시트 수식으로 변환
+          if (notes.includes('\n')) {
+            const notesLines = notes.split('\n');
+            if (notesLines.length > 1) {
+              // 각 줄을 "줄내용"&CHAR(10)& 형태로 연결
+              const formulaParts = notesLines.map(line => `"${line}"`).join('&CHAR(10)&')
+              notes = `=${formulaParts}`;
+            }
+          }
+          
+          row.push(notes)
           
           // 상품별 주문 수량 처리
           sortedProducts.forEach(product => {

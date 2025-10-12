@@ -452,9 +452,14 @@ export async function POST(request: NextRequest) {
     
     // 입금 확인 섹션 추가 (총판매액 두 칸 아래)
     const emptyRow = new Array(headerRows[0].length).fill('') // 빈 행
-    // 헤더: 보낸분/받는분, 송금메모, 출금액, 입금액, ...중간 빈칸들..., 주문액, 확인
-    const middleEmptyCount = Math.max(0, headerRows[0].length - 6); // 음수 방지
-    const depositCheckHeaderRow = ['보낸분/받는분', '송금메모', '출금액', '입금액', ...new Array(middleEmptyCount).fill(''), '주문액', '확인'] // 입금 확인 헤더
+    // 헤더: A열(보낸분/받는분), B열(송금메모), C열(출금액), D열(입금액), E열(주문액), F열(확인)
+    const depositCheckHeaderRow = new Array(headerRows[0].length).fill('');
+    depositCheckHeaderRow[0] = '보낸분/받는분';
+    depositCheckHeaderRow[1] = '송금메모';
+    depositCheckHeaderRow[2] = '출금액';
+    depositCheckHeaderRow[3] = '입금액';
+    depositCheckHeaderRow[4] = '주문액';
+    depositCheckHeaderRow[5] = '확인';
     finalData.push(emptyRow, depositCheckHeaderRow)
     
     // 입금 확인 헤더 행 인덱스 저장
