@@ -235,7 +235,7 @@ export async function POST(request: NextRequest) {
       
       // 첫번째 줄: 상품명
       const productNames = sortedProducts.map(p => p.name.replace(/\n/g, ' '))
-      const firstRow = ['주문자', '원본주문', '비고', ...productNames]
+      const firstRow = ['주문자', '주문액', '원본주문', '비고', ...productNames]
       
       // 두번째 줄: 판매일
       const saleDates = sortedProducts.map(p => {
@@ -245,14 +245,14 @@ export async function POST(request: NextRequest) {
         }
         return p.sale_date
       })
-      const secondRow = ['', '', '', ...saleDates]
+      const secondRow = ['', '', '', '', ...saleDates]
       
       // 세번째 줄: 판매가 (3A 셀에 "판매가" 제목 추가)
       const prices = sortedProducts.map(p => p.price || 0)
-      const thirdRow = ['판매가', '', '', ...prices]
+      const thirdRow = ['판매가', '', '', '', ...prices]
       
       // 네번째 줄: 재고 (4A 셀에 "재고" 제목 추가)
-      const fourthRow = ['재고', '', '', ...new Array(productNames.length).fill('')]
+      const fourthRow = ['재고', '', '', '', ...new Array(productNames.length).fill('')]
       
       return [firstRow, secondRow, thirdRow, fourthRow]
     }
@@ -279,6 +279,36 @@ export async function POST(request: NextRequest) {
           // 첫 번째 행이면 닉네임 표시, 아니면 빈 문자열
           if (index === 0) {
             row.push(nickname)
+          } else {
+            row.push('')
+          }
+          
+          // 주문액 계산 (상품별 주문수량 × 가격의 합계)
+          let orderAmount = 0
+          if (order.products && Array.isArray(order.products) && order.products.length > 0) {
+            const isFinalOrderProduct = typeof order.products[0] === 'object' && 'quantity' in order.products[0]
+            
+            if (isFinalOrderProduct) {
+              (order.products as any[]).forEach(p => {
+                if (p.quantity > 0 && p.price > 0) {
+                  orderAmount += p.quantity * p.price
+                }
+              })
+            }
+          }
+          
+          // 주문액을 수식으로 추가 (각 상품의 주문수량 × 가격의 합계)
+          if (orderAmount > 0) {
+            // SUMPRODUCT 함수를 사용하여 더 간결한 수식 생성 (Google Sheets용 VALUE 함수 포함)
+            const priceStartColumn = getColumnLetter(5) // E열부터 시작
+            const priceEndColumn = getColumnLetter(4 + sortedProducts.length) // 마지막 상품 컬럼
+            const priceRow = 3 // 판매가가 있는 행 (0-based이므로 3)
+            const currentRow = headerRows.length + 2 + rows.length // 현재 행 번호 계산
+            
+            // Google Sheets에서는 VALUE 함수로 텍스트 숫자를 숫자로 변환
+            // SUMPRODUCT 함수 사용: =SUMPRODUCT(VALUE(E3:F3), E6:F6)
+            const orderAmountFormula = `=SUMPRODUCT(VALUE(${priceStartColumn}${priceRow}:${priceEndColumn}${priceRow}), ${priceStartColumn}${currentRow}:${priceEndColumn}${currentRow})`
+            row.push(orderAmountFormula)
           } else {
             row.push('')
           }
@@ -397,46 +427,47 @@ export async function POST(request: NextRequest) {
     console.log('포맷팅된 주문 행:', orderRows);
     
     // 총 주문수 라인 생성 (수식으로 계산) - 임시로 생성
-    const productColumns = headerRows[0].length - 3 // 헤더에서 주문자, 원본주문, 비고 제외
-    const dataStartRow = headerRows.length + 2; // 헤더 다음 + 총주문수 행 다음부터 시작 (D6부터)
+    const productColumns = headerRows[0].length - 4 // 헤더에서 주문자, 주문액, 원본주문, 비고 제외
+    const dataStartRow = headerRows.length + 2; // 헤더 다음 + 총주문수 행 다음부터 시작 (E6부터)
     const dataEndRow = dataStartRow + orderRows.length - 1; // 주문 데이터 끝
     
     // 각 상품별 총 주문수 계산 수식 (임시)
     const totalOrderFormulas = [];
     for (let i = 0; i < productColumns; i++) {
-      const columnLetter = getColumnLetter(4 + i); // D, E, F, ... (주문자, 원본주문, 비고 제외)
+      const columnLetter = getColumnLetter(5 + i); // E, F, G, ... (주문자, 주문액, 원본주문, 비고 제외)
       const formula = `=SUM(${columnLetter}${dataStartRow}:${columnLetter}${dataEndRow})`;
       totalOrderFormulas.push(formula);
     }
-    const totalOrderRow = ['총 주문수', '', '', ...totalOrderFormulas]
+    const totalOrderRow = ['총 주문수', '', '', '', ...totalOrderFormulas]
     
-    // 총 판매액 라인 생성 (판매가 × 주문수) - 임시로 생성
+    // 총 판매액 라인 생성 (판매가 × 주문수) - Google Sheets용 VALUE 함수 사용
     const totalSalesFormulas = [];
     for (let i = 0; i < productColumns; i++) {
-      const columnLetter = getColumnLetter(4 + i); // D, E, F, ...
+      const columnLetter = getColumnLetter(5 + i); // E, F, G, ...
       const priceRow = 3; // 판매가가 있는 행 (0-based이므로 3)
       const totalOrderRowNum = headerRows.length + 1; // 총 주문수 행
-      totalSalesFormulas.push(`=${columnLetter}${priceRow}*${columnLetter}${totalOrderRowNum}`);
+      // Google Sheets에서는 VALUE 함수로 텍스트 숫자를 숫자로 변환
+      totalSalesFormulas.push(`=VALUE(${columnLetter}${priceRow})*${columnLetter}${totalOrderRowNum}`);
     }
     
-    const totalSalesDataRow = ['총 판매액', '', '', ...totalSalesFormulas]
+    const totalSalesDataRow = ['총 판매액', '', '', '', ...totalSalesFormulas]
     
     // 실제 주문 데이터에서 상품별 주문수량을 계산하여 컬럼 정렬
     const sortColumnsByOrderQuantity = (data: string[][], orders: OrderData[]) => {
-      // 상품별 주문수량 계산 - orderRows에서 직접 계산
+      // 상품별 주문수량 계산 - 실제 주문 데이터에서 계산
       const productOrderCounts = new Map<string, number>()
       
-      // orderRows에서 각 상품의 주문수량 계산
+      // 실제 주문 데이터에서 각 상품의 주문수량 계산
       const headerRowCount = headerRows.length
-      const orderDataStartRow = headerRowCount + 1 // 주문 데이터 시작 행
+      const orderDataStartRow = headerRowCount + 1 // 주문 데이터 시작 행 (총주문수 행 다음)
       const orderDataEndRow = data.length - 2 // 총 판매액 행 제외
       
       console.log(`주문 데이터 행 범위: ${orderDataStartRow} ~ ${orderDataEndRow}`)
       
       for (let rowIndex = orderDataStartRow; rowIndex < orderDataEndRow; rowIndex++) {
         const row = data[rowIndex]
-        if (row && row.length > 3) {
-          for (let colIndex = 3; colIndex < row.length - 1; colIndex++) { // 마지막 컬럼(비고) 제외
+        if (row && row.length > 4) {
+          for (let colIndex = 4; colIndex < row.length; colIndex++) { // 상품 컬럼들 (4번 인덱스부터 끝까지)
             const quantity = row[colIndex]
             if (quantity && quantity !== '' && quantity !== '0' && !isNaN(Number(quantity))) {
               const productName = data[0][colIndex] // 헤더에서 상품명 가져오기
@@ -451,31 +482,35 @@ export async function POST(request: NextRequest) {
       
       // 상품 컬럼들의 주문수량을 기준으로 정렬
       const productTotals: { index: number; total: number; name: string }[] = []
-      for (let i = 3; i < data[0].length - 1; i++) { // 마지막 컬럼(비고) 제외
+      for (let i = 4; i < data[0].length; i++) { // 상품 컬럼들 (4번 인덱스부터 끝까지)
         // 헤더에서 상품명 가져오기
         const productName = data[0][i] // 첫 번째 행(상품명 헤더)
         const orderCount = productOrderCounts.get(productName) || 0
         productTotals.push({ index: i, total: orderCount, name: productName })
       }
       
-      // 주문수량 기준으로 정렬 (많은 순, 0인 경우 가나다 순)
+      // 주문수량 기준으로 정렬 (많은 순이 왼쪽, 0인 경우 가나다 순)
       productTotals.sort((a, b) => {
         if (a.total !== b.total) {
-          return b.total - a.total // 주문수량 많은 순
+          return a.total - b.total // 주문수량 적은 순 (오름차순) - 나중에 reverse로 뒤집음
         }
         // 주문수량이 같은 경우 (특히 0인 경우) 가나다 순으로 정렬
         return a.name.localeCompare(b.name, 'ko-KR')
       })
       
-      console.log('정렬된 상품 순서:', productTotals.map(p => ({ name: p.name, total: p.total })))
+      // 주문수량이 0이 아닌 상품들만 역순으로 정렬 (많은 것이 왼쪽)
+      const productsWithOrders = productTotals.filter(p => p.total > 0).reverse()
+      const productsWithoutOrders = productTotals.filter(p => p.total === 0)
+      const finalProductTotals = [...productsWithOrders, ...productsWithoutOrders]
+      
+      console.log('정렬된 상품 순서:', finalProductTotals.map(p => ({ name: p.name, total: p.total })))
       
       // 정렬된 순서로 컬럼 재배치
       const reorderedData = data.map(row => {
-        const newRow = [...row.slice(0, 3)] // 주문자, 원본주문, 비고는 그대로
-        productTotals.forEach(({ index }) => {
+        const newRow = [...row.slice(0, 4)] // 주문자, 주문액, 원본주문, 비고는 그대로
+        finalProductTotals.forEach(({ index }) => {
           newRow.push(row[index]) // 상품 컬럼들을 정렬된 순서로 추가
         })
-        newRow.push(row[row.length - 1]) // 마지막 비고 컬럼 추가
         return newRow
       })
       
@@ -495,19 +530,20 @@ export async function POST(request: NextRequest) {
       const totalSalesRowIndex = data.length - 1
       
       // 총 주문수 행의 수식 재생성
-      for (let i = 3; i < data[totalOrderRowIndex].length - 1; i++) {
+      for (let i = 4; i < data[totalOrderRowIndex].length - 1; i++) {
         const columnLetter = getColumnLetter(i + 1) // 0-based이므로 +1
         const formula = `=SUM(${columnLetter}${dataStartRow}:${columnLetter}${dataEndRow})`
         data[totalOrderRowIndex][i] = formula
       }
       
-      // 총 판매액 행의 수식 재생성
+      // 총 판매액 행의 수식 재생성 - Google Sheets용 VALUE 함수 사용
       const salesFormulas = [];
-      for (let i = 3; i < data[totalSalesRowIndex].length - 1; i++) {
+      for (let i = 4; i < data[totalSalesRowIndex].length - 1; i++) {
         const columnLetter = getColumnLetter(i + 1) // 0-based이므로 +1
         const priceRow = 3 // 판매가가 있는 행 (0-based이므로 3)
         const totalOrderRowNum = totalOrderRowIndex + 1 // 1-based 행 번호
-        const formula = `=${columnLetter}${priceRow}*${columnLetter}${totalOrderRowNum}`
+        // Google Sheets에서는 VALUE 함수로 텍스트 숫자를 숫자로 변환
+        const formula = `=VALUE(${columnLetter}${priceRow})*${columnLetter}${totalOrderRowNum}`
         data[totalSalesRowIndex][i] = formula
         salesFormulas.push(formula)
       }
@@ -629,8 +665,8 @@ export async function POST(request: NextRequest) {
             sheetId: newSheetId,
             startRowIndex: 2,
             endRowIndex: 3,
-            startColumnIndex: 3 + i,
-            endColumnIndex: 4 + i
+            startColumnIndex: 4 + i,
+            endColumnIndex: 5 + i
           },
           cell: {
             userEnteredFormat: {
@@ -647,14 +683,30 @@ export async function POST(request: NextRequest) {
       })
     }
     
-    // 3. 원본주문 컬럼(두 번째 컬럼)의 너비를 넓게 설정
+    // 3. 주문액 컬럼(B열)의 너비 설정
     formatRequests.push({
       updateDimensionProperties: {
         range: {
           sheetId: newSheetId,
           dimension: 'COLUMNS',
-          startIndex: 1, // B열 (원본주문)
+          startIndex: 1, // B열 (주문액)
           endIndex: 2
+        },
+        properties: {
+          pixelSize: 100 // 주문액 컬럼을 100px로 설정
+        },
+        fields: 'pixelSize'
+      }
+    })
+    
+    // 4. 원본주문 컬럼(세 번째 컬럼)의 너비를 넓게 설정
+    formatRequests.push({
+      updateDimensionProperties: {
+        range: {
+          sheetId: newSheetId,
+          dimension: 'COLUMNS',
+          startIndex: 2, // C열 (원본주문)
+          endIndex: 3
         },
         properties: {
           pixelSize: 300 // 원본주문 컬럼을 300px로 설정
@@ -663,7 +715,7 @@ export async function POST(request: NextRequest) {
       }
     })
     
-    // 4. 주문자 컬럼(첫 번째 컬럼)의 너비 설정
+    // 5. 주문자 컬럼(첫 번째 컬럼)의 너비 설정
     formatRequests.push({
       updateDimensionProperties: {
         range: {
@@ -679,14 +731,14 @@ export async function POST(request: NextRequest) {
       }
     })
     
-    // 5. 비고 컬럼(세 번째 컬럼)의 너비 설정
+    // 6. 비고 컬럼(네 번째 컬럼)의 너비 설정
     formatRequests.push({
       updateDimensionProperties: {
         range: {
           sheetId: newSheetId,
           dimension: 'COLUMNS',
-          startIndex: 2, // C열 (비고)
-          endIndex: 3
+          startIndex: 3, // D열 (비고)
+          endIndex: 4
         },
         properties: {
           pixelSize: 150 // 비고 컬럼을 150px로 설정
@@ -711,8 +763,8 @@ export async function POST(request: NextRequest) {
           range: {
             sheetId: newSheetId,
             dimension: 'COLUMNS',
-            startIndex: 3 + i, // 상품 컬럼들
-            endIndex: 4 + i
+            startIndex: 4 + i, // 상품 컬럼들 (E, F, G, ...)
+            endIndex: 5 + i
           },
           properties: {
             pixelSize: Math.min(calculatedWidth, 300) // 최대 300px로 제한
@@ -741,8 +793,8 @@ export async function POST(request: NextRequest) {
             sheetId: newSheetId,
             startRowIndex: totalSalesRowIndex - 1,
             endRowIndex: totalSalesRowIndex,
-            startColumnIndex: 3 + i,
-            endColumnIndex: 4 + i
+            startColumnIndex: 4 + i,
+            endColumnIndex: 5 + i
           },
           cell: {
             userEnteredFormat: {
@@ -783,7 +835,31 @@ export async function POST(request: NextRequest) {
       }
     })
     
-    // 9. A행(첫 번째 컬럼) 좌측정렬 및 글자 두껍게 설정
+    // 9. 주문액 컬럼(B열) 우측정렬 및 숫자 형식 설정
+    formatRequests.push({
+      repeatCell: {
+        range: {
+          sheetId: newSheetId,
+          startRowIndex: 0,
+          endRowIndex: allData.length,
+          startColumnIndex: 1, // B열 (주문액)
+          endColumnIndex: 2
+        },
+        cell: {
+          userEnteredFormat: {
+            horizontalAlignment: 'RIGHT',
+            verticalAlignment: 'MIDDLE',
+            numberFormat: {
+              type: 'NUMBER',
+              pattern: '#,##0'
+            }
+          }
+        },
+        fields: 'userEnteredFormat.horizontalAlignment,userEnteredFormat.verticalAlignment,userEnteredFormat.numberFormat'
+      }
+    })
+    
+    // 10. A행(첫 번째 컬럼) 좌측정렬 및 글자 두껍게 설정
     formatRequests.push({
       repeatCell: {
         range: {
@@ -806,7 +882,7 @@ export async function POST(request: NextRequest) {
       }
     })
     
-    // 10. 1-5줄 고정 설정 (헤더 4줄 + 총주문수 1줄)
+    // 11. 1-5줄 고정 설정 (헤더 4줄 + 총주문수 1줄)
     formatRequests.push({
       updateSheetProperties: {
         properties: {
@@ -908,8 +984,8 @@ export async function POST(request: NextRequest) {
     
     // 각 상품 컬럼에 대해 SUM 수식 추가
     for (let i = 0; i < productColumns; i++) {
-      const columnNumber = 4 + i // D=4, E=5, F=6, ... (A=1, B=2, C=3, D=4)
-      const columnLetter = getColumnLetter(columnNumber) // D, E, F, ..., AA, AB, ...
+      const columnNumber = 5 + i // E=5, F=6, G=7, ... (A=1, B=2, C=3, D=4, E=5)
+      const columnLetter = getColumnLetter(columnNumber) // E, F, G, ..., AA, AB, ...
       const dataStartRow = headerRowCount + 2 // 데이터 시작 행 (6행)
       const dataEndRow = headerRowCount + 1 + orderRows.length // 데이터 끝 행
       
@@ -925,8 +1001,8 @@ export async function POST(request: NextRequest) {
               sheetId: newSheetId,
               startRowIndex: firstTotalRow - 1,
               endRowIndex: firstTotalRow,
-              startColumnIndex: 3 + i,
-              endColumnIndex: 4 + i
+              startColumnIndex: 4 + i,
+              endColumnIndex: 5 + i
             },
             rows: [{
               values: [{
@@ -946,8 +1022,8 @@ export async function POST(request: NextRequest) {
               sheetId: newSheetId,
               startRowIndex: lastTotalRow - 1,
               endRowIndex: lastTotalRow,
-              startColumnIndex: 3 + i,
-              endColumnIndex: 4 + i
+              startColumnIndex: 4 + i,
+              endColumnIndex: 5 + i
             },
             rows: [{
               values: [{
@@ -964,13 +1040,13 @@ export async function POST(request: NextRequest) {
     
     // 총 판매액 수식 추가 (판매가 × 주문수)
     for (let i = 0; i < productColumns; i++) {
-      const columnNumber = 4 + i // D=4, E=5, F=6, ... (A=1, B=2, C=3, D=4)
-      const columnLetter = getColumnLetter(columnNumber) // D, E, F, ..., AA, AB, ...
+      const columnNumber = 5 + i // E=5, F=6, G=7, ... (A=1, B=2, C=3, D=4, E=5)
+      const columnLetter = getColumnLetter(columnNumber) // E, F, G, ..., AA, AB, ...
       const priceRow = 3 // 판매가 행 (3행)
       const firstTotalOrderRow = headerRowCount + 1 // 첫 번째 총주문수 행 (5행)
       
-      // 판매가 × 총주문수 수식
-      const salesFormula = `=${columnLetter}${priceRow}*${columnLetter}${firstTotalOrderRow}`
+      // 판매가 × 총주문수 수식 - Google Sheets용 VALUE 함수 사용
+      const salesFormula = `=VALUE(${columnLetter}${priceRow})*${columnLetter}${firstTotalOrderRow}`
       console.log(`총 판매액 수식 생성: ${salesFormula}`) // 디버깅용
       
       formulaRequests.push({
@@ -979,8 +1055,8 @@ export async function POST(request: NextRequest) {
             sheetId: newSheetId,
             startRowIndex: totalSalesRowNumber - 1,
             endRowIndex: totalSalesRowNumber,
-            startColumnIndex: 3 + i,
-            endColumnIndex: 4 + i
+            startColumnIndex: 4 + i,
+            endColumnIndex: 5 + i
           },
           rows: [{
             values: [{
@@ -995,8 +1071,8 @@ export async function POST(request: NextRequest) {
     }
     
     // B행에 전체 총 판매액 합계 수식 추가
-    const totalSalesStartColumn = 4 // D열부터 시작 (A=1, B=2, C=3, D=4)
-    const totalSalesEndColumn = 3 + productColumns // 마지막 상품 컬럼 (D=4부터 시작하므로 3+productColumns)
+    const totalSalesStartColumn = 5 // E열부터 시작 (A=1, B=2, C=3, D=4, E=5)
+    const totalSalesEndColumn = 4 + productColumns // 마지막 상품 컬럼 (E=5부터 시작하므로 4+productColumns)
     const totalSalesStartLetter = getColumnLetter(totalSalesStartColumn)
     const totalSalesEndLetter = getColumnLetter(totalSalesEndColumn)
     const totalSalesFormula = `=SUM(${totalSalesStartLetter}${totalSalesRowNumber}:${totalSalesEndLetter}${totalSalesRowNumber})`
