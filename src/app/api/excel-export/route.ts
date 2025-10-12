@@ -438,12 +438,67 @@ export async function POST(request: NextRequest) {
     // 수식 재생성 - 구글시트 API와 동일
     const finalData = regenerateFormulas(sortedAllData)
     
+    // 입금 확인 섹션 추가 전에 주문 데이터 범위 저장
+    const orderDataStartRow = headerRows.length + 1; // 헤더(4줄) + 총주문수(1줄) = 5줄, 0-based이므로 5
+    const orderDataEndRow = finalData.length - 2; // 총주문수 + 총판매액 제외
+    
+    // 입금 확인 섹션 추가 (총판매액 두 칸 아래)
+    const emptyRow = new Array(headerRows[0].length).fill('') // 빈 행
+    // 헤더: 보낸분/받는분, 송금메모, 출금액, 입금액, ...중간 빈칸들..., 주문액, 확인
+    const middleEmptyCount = Math.max(0, headerRows[0].length - 6); // 음수 방지
+    const depositCheckHeaderRow = ['보낸분/받는분', '송금메모', '출금액', '입금액', ...new Array(middleEmptyCount).fill(''), '주문액', '확인'] // 입금 확인 헤더
+    finalData.push(emptyRow, depositCheckHeaderRow)
+    
+    // 입금 확인 헤더 행 인덱스 저장
+    const depositCheckHeaderRowIndex = finalData.length - 1
+    
     // 최종 데이터 확인
     console.log('=== 최종 데이터 확인 ===');
     console.log('총 행 수:', finalData.length);
     console.log('첫 번째 총주문수 행:', finalData[headerRows.length]);
-    console.log('마지막 총주문수 행:', finalData[finalData.length - 2]);
-    console.log('총 판매액 행:', finalData[finalData.length - 1]);
+    console.log('마지막 총주문수 행:', finalData[finalData.length - 4]); // 빈행, 입금확인헤더 추가로 -4
+    console.log('총 판매액 행:', finalData[finalData.length - 3]); // 빈행, 입금확인헤더 추가로 -3
+
+    // 입금 확인 데이터 행에 수식 추가
+    // A열(보낸분/받는분): 사용자가 붙여넣기
+    // B열(송금메모): 사용자가 붙여넣기
+    // C열(출금액): 사용자가 붙여넣기
+    // D열(입금액): 사용자가 붙여넣기
+    // E열(주문액): A열 이름과 매칭하여 위의 주문 데이터에서 주문액 가져오기
+    // F열(확인): D열 입금액과 E열 주문액 비교
+    const depositCheckDataStartRow = depositCheckHeaderRowIndex + 1;
+    
+    // 주문 데이터 개수 계산
+    const orderDataCount = orderDataEndRow - orderDataStartRow;
+    
+    // 입금 확인 데이터 행 100개 미리 생성 (사용자가 데이터를 붙여넣을 공간)
+    for (let i = 0; i < 100; i++) {
+      const currentRow = depositCheckDataStartRow + i;
+      const currentRowNum = currentRow + 1; // 1-based
+      
+      // E열: 주문액 매칭 (A열 보낸분/받는분과 매칭, 공백 제거 후 비교)
+      const senderCell = `A${currentRowNum}`;
+      
+      // 각 주문자에 대해 IF 조건 생성 (공백 제거 후 비교)
+      let orderAmountMatchFormula = `=IF(${senderCell}="", ""`;
+      for (let j = 0; j < orderDataCount; j++) {
+        const orderRowNum = orderDataStartRow + 1 + j; // 1-based
+        orderAmountMatchFormula += `, IF(SUBSTITUTE(${senderCell}, " ", "")=SUBSTITUTE($A$${orderRowNum}, " ", ""), $B$${orderRowNum}`;
+      }
+      // 모든 IF를 닫고 마지막에 빈 문자열
+      orderAmountMatchFormula += ', ""' + ')'.repeat(orderDataCount) + ')';
+      
+      // F열: 확인 (D열 입금액과 E열 주문액 비교)
+      const depositAmountCell = `D${currentRowNum}`;
+      const orderAmountCell = `E${currentRowNum}`;
+      const checkFormula = `=IF(OR(${depositAmountCell}="", ${orderAmountCell}=""), "", IF(${depositAmountCell}=${orderAmountCell}, "동일", "확인필요"))`;
+      
+      // 데이터 행 추가
+      const dataRow = new Array(headerRows[0].length).fill('');
+      dataRow[4] = orderAmountMatchFormula; // E열 (인덱스 4)
+      dataRow[5] = checkFormula; // F열 (인덱스 5)
+      finalData.push(dataRow);
+    }
 
     // 업로드된 엑셀 파일 읽기
     const uploadedExcelBuffer = await excelFile.arrayBuffer();
@@ -504,6 +559,28 @@ export async function POST(request: NextRequest) {
           }
         }
       }
+    }
+    
+    // 입금 확인 헤더 행에 빨간색 배경 설정 (전체 행)
+    for (let col = 0; col < headerRows[0].length; col++) {
+      const cellAddress = XLSX.utils.encode_cell({ r: depositCheckHeaderRowIndex, c: col });
+      if (!googleWorksheet[cellAddress]) {
+        googleWorksheet[cellAddress] = { t: 's', v: depositCheckHeaderRow[col] || '' };
+      }
+      googleWorksheet[cellAddress].s = {
+        ...googleWorksheet[cellAddress].s,
+        fill: {
+          fgColor: { rgb: 'FF0000' } // 빨간색
+        },
+        font: {
+          bold: true,
+          color: { rgb: 'FFFFFF' } // 흰색 텍스트
+        },
+        alignment: {
+          horizontal: 'center',
+          vertical: 'middle'
+        }
+      };
     }
     
     // 컬럼 너비 설정 (finalData에 맞게)
