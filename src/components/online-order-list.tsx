@@ -334,7 +334,6 @@ export function OnlineOrderList() {
       // 엑셀 파일 다운로드 (스타일 포함)
       XLSX.writeFile(workbook, fileName, {
         cellStyles: true,
-        cellNF: true,
       });
 
       toast.success(`${exportableOrders.length}개의 주문이 엑셀로 내보내졌습니다.`);

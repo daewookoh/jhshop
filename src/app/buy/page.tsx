@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -26,9 +26,9 @@ type OnlineOrder = Tables<'online_orders'> & {
   online_product: OnlineProduct;
 };
 
-export default function BuyPage() {
+function BuyPageContent() {
   const searchParams = useSearchParams();
-  const productId = searchParams.get('id');
+  const productId = searchParams?.get('id') || null;
   
   const [mobile, setMobile] = useState("");
   const [name, setName] = useState("");
@@ -1153,6 +1153,21 @@ export default function BuyPage() {
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+export default function BuyPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
+          <p className="text-muted-foreground">로딩 중...</p>
+        </div>
+      </div>
+    }>
+      <BuyPageContent />
+    </Suspense>
   );
 }
 
