@@ -773,7 +773,7 @@ function BuyPageContent() {
                   <CardHeader className="pb-4">
                     <div className="flex items-center justify-between">
                       <CardTitle className="text-center text-foreground flex-1">상품 주문</CardTitle>
-                      {onlineOrders.length > 0 && (
+                      {status?.type === 'available' && onlineOrders.length > 0 && (
                         <Button
                           variant="outline"
                           size="sm"
@@ -787,39 +787,31 @@ function BuyPageContent() {
                     </div>
                   </CardHeader>
                   <CardContent className="space-y-6">
-                    {/* Status Alert */}
-                    {status && status.type !== 'available' && (
-                      <Alert variant={status.type === 'soldout' || status.type === 'ended' ? 'destructive' : 'default'}>
-                        <AlertCircle className="h-4 w-4" />
-                        <AlertDescription>{status.message}</AlertDescription>
-                      </Alert>
-                    )}
-
-                    {/* Top Section: Image/Description and Form */}
-                    {status?.type === 'available' && (
-                      <div className="flex flex-col md:flex-row gap-6">
-                        {/* Left: Product Image and Description */}
-                        <div className="w-full md:w-1/2 flex-shrink-0 space-y-4">
-                          {onlineProduct.product.image_url && (
-                            <div className="aspect-square max-w-md mx-auto md:mx-0">
-                              <img
-                                src={onlineProduct.product.image_url}
-                                alt={onlineProduct.product.name}
-                                className="w-full h-full object-cover rounded-lg"
-                              />
-                            </div>
-                          )}
-                          <div>
-                            <h2 className="text-2xl font-bold text-foreground mb-2 whitespace-pre-line">
-                              {onlineProduct.product.name}
-                            </h2>
-                            <p className="text-3xl font-bold text-primary">
-                              {onlineProduct.product.price.toLocaleString()}원
-                            </p>
+                    {/* Product Image and Description - Always shown */}
+                    <div className="flex flex-col md:flex-row gap-6">
+                      {/* Left: Product Image and Description */}
+                      <div className="w-full md:w-1/2 flex-shrink-0 space-y-4">
+                        {onlineProduct.product.image_url && (
+                          <div className="aspect-square max-w-md mx-auto md:mx-0">
+                            <img
+                              src={onlineProduct.product.image_url}
+                              alt={onlineProduct.product.name}
+                              className="w-full h-full object-cover rounded-lg"
+                            />
                           </div>
+                        )}
+                        <div>
+                          <h2 className="text-2xl font-bold text-foreground mb-2 whitespace-pre-line">
+                            {onlineProduct.product.name}
+                          </h2>
+                          <p className="text-3xl font-bold text-primary">
+                            {onlineProduct.product.price.toLocaleString()}원
+                          </p>
                         </div>
+                      </div>
 
-                        {/* Right: Order Form */}
+                      {/* Right: Order Form - Only shown when available */}
+                      {status?.type === 'available' ? (
                         <div className="flex-1 space-y-4">
                           <div className="space-y-2">
                             <Label htmlFor="quantity">수량</Label>
@@ -896,8 +888,23 @@ function BuyPageContent() {
                             />
                           </div>
                         </div>
-                      </div>
-                    )}
+                      ) : (
+                        <div className="flex-1 flex items-center justify-center">
+                          <div className={`w-full p-8 rounded-lg border-2 ${
+                            status?.type === 'soldout' || status?.type === 'ended' 
+                              ? 'bg-destructive/10 border-destructive text-destructive' 
+                              : 'bg-muted border-border text-foreground'
+                          }`}>
+                            <div className="flex items-center justify-center gap-4 mb-2">
+                              <AlertCircle className="h-8 w-8" />
+                            </div>
+                            <div className="text-center text-2xl font-bold">
+                              {status?.message}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
 
                     {/* Bottom Section: Total Price and Order Button */}
                     {status?.type === 'available' && (
