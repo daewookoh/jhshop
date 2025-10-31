@@ -80,7 +80,7 @@ export function useOnlineProducts() {
   };
 
   const updateOnlineProduct = async (
-    id: string,
+    id: number,
     data: {
       product_id: string;
       start_datetime: string;
@@ -118,7 +118,7 @@ export function useOnlineProducts() {
     }
   };
 
-  const deleteOnlineProduct = async (id: string) => {
+  const deleteOnlineProduct = async (id: number) => {
     try {
       const { error } = await supabase
         .from('online_products')

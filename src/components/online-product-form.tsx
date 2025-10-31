@@ -30,7 +30,7 @@ interface OnlineProductFormProps {
     available_quantity: number;
   }) => Promise<void>;
   onCancel: () => void;
-  onDelete?: (id: string) => void;
+  onDelete?: (id: number) => void;
 }
 
 export function OnlineProductForm({ onlineProduct, products, onSave, onCancel, onDelete }: OnlineProductFormProps) {

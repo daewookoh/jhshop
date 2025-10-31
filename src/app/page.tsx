@@ -10,6 +10,7 @@ import { ProductForm } from "@/components/product-form";
 import { ProductList } from "@/components/product-list";
 import { OnlineProductForm } from "@/components/online-product-form";
 import { OnlineProductList } from "@/components/online-product-list";
+import { OnlineOrderList } from "@/components/online-order-list";
 import { ImageGenerationDialog } from "@/components/image-generation-dialog";
 import { OrderUpload } from "@/components/order-upload";
 import { Plus, Upload, Download, LogOut, User } from "lucide-react";
@@ -93,7 +94,7 @@ export default function Home() {
     setShowOnlineProductForm(true);
   };
 
-  const handleDeleteOnlineProduct = async (onlineProductId: string) => {
+  const handleDeleteOnlineProduct = async (onlineProductId: number) => {
     const success = await deleteOnlineProduct(onlineProductId);
     if (success) {
       setShowOnlineProductForm(false);
@@ -273,12 +274,18 @@ export default function Home() {
           </div>
 
           <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-            <TabsList className="grid w-full grid-cols-3 bg-muted/30 shadow-soft border border-border rounded-lg p-1">
+            <TabsList className="grid w-full grid-cols-4 bg-muted/30 shadow-soft border border-border rounded-lg p-1">
               <TabsTrigger 
                 value="products" 
                 className="font-medium text-muted-foreground data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm transition-all duration-200 rounded-md"
               >
                 판매상품
+              </TabsTrigger>
+              <TabsTrigger 
+                value="orders" 
+                className="font-medium text-muted-foreground data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm transition-all duration-200 rounded-md"
+              >
+                주문내역
               </TabsTrigger>
               <TabsTrigger 
                 value="online-products" 
@@ -287,10 +294,10 @@ export default function Home() {
                 온라인상품
               </TabsTrigger>
               <TabsTrigger 
-                value="orders" 
+                value="online-orders" 
                 className="font-medium text-muted-foreground data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm transition-all duration-200 rounded-md"
               >
-                주문내역
+                온라인 주문목록
               </TabsTrigger>
             </TabsList>
 
@@ -338,6 +345,10 @@ export default function Home() {
               )}
             </TabsContent>
 
+            <TabsContent value="orders" className="space-y-6">
+              <OrderUpload />
+            </TabsContent>
+
             <TabsContent value="online-products" className="space-y-6">
               {showOnlineProductForm ? (
                 <OnlineProductForm
@@ -370,8 +381,8 @@ export default function Home() {
               )}
             </TabsContent>
 
-            <TabsContent value="orders" className="space-y-6">
-              <OrderUpload />
+            <TabsContent value="online-orders" className="space-y-6">
+              <OnlineOrderList />
             </TabsContent>
           </Tabs>
 
