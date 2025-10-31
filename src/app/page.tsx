@@ -8,17 +8,21 @@ import { Button } from "@/components/ui/button";
 import { FloatingButton } from "@/components/ui/floating-button";
 import { ProductForm } from "@/components/product-form";
 import { ProductList } from "@/components/product-list";
+import { OnlineProductForm } from "@/components/online-product-form";
+import { OnlineProductList } from "@/components/online-product-list";
 import { ImageGenerationDialog } from "@/components/image-generation-dialog";
 import { OrderUpload } from "@/components/order-upload";
 import { Plus, Upload, Download, LogOut, User } from "lucide-react";
 import { toast } from "sonner";
 import { useProducts, Product } from "@/hooks/useProducts";
+import { useOnlineProducts, OnlineProduct } from "@/hooks/useOnlineProducts";
 import { useAuth } from "@/contexts/AuthContext";
 
 export default function Home() {
   const router = useRouter();
   const { user, profile, signOut, isManagerOrAdmin, isAdmin, loading, initialized, fallbackMode } = useAuth();
   const { products, loading: productsLoading, addProduct, updateProduct, deleteProduct, uploadImage } = useProducts();
+  const { onlineProducts, loading: onlineProductsLoading, addOnlineProduct, updateOnlineProduct, deleteOnlineProduct } = useOnlineProducts();
   const [activeTab, setActiveTab] = useState(() => {
     // localStorage에서 마지막 활성 탭 복원 (SSR 안전)
     if (typeof window !== 'undefined') {
@@ -28,6 +32,8 @@ export default function Home() {
   });
   const [showProductForm, setShowProductForm] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | undefined>();
+  const [showOnlineProductForm, setShowOnlineProductForm] = useState(false);
+  const [editingOnlineProduct, setEditingOnlineProduct] = useState<OnlineProduct | undefined>();
   const [productFilter, setProductFilter] = useState("");
   const [showImageGenerationDialog, setShowImageGenerationDialog] = useState(false);
 
@@ -79,6 +85,40 @@ export default function Home() {
     if (success) {
       setShowProductForm(false);
       setEditingProduct(undefined);
+    }
+  };
+
+  const handleEditOnlineProduct = (onlineProduct: OnlineProduct) => {
+    setEditingOnlineProduct(onlineProduct);
+    setShowOnlineProductForm(true);
+  };
+
+  const handleDeleteOnlineProduct = async (onlineProductId: string) => {
+    const success = await deleteOnlineProduct(onlineProductId);
+    if (success) {
+      setShowOnlineProductForm(false);
+      setEditingOnlineProduct(undefined);
+    }
+  };
+
+  const handleSaveOnlineProduct = async (data: {
+    product_id: string;
+    start_datetime: string;
+    end_datetime: string;
+    available_quantity: number;
+  }) => {
+    if (editingOnlineProduct) {
+      const success = await updateOnlineProduct(editingOnlineProduct.id, data);
+      if (success) {
+        setShowOnlineProductForm(false);
+        setEditingOnlineProduct(undefined);
+      }
+    } else {
+      const success = await addOnlineProduct(data);
+      if (success) {
+        setShowOnlineProductForm(false);
+        setEditingOnlineProduct(undefined);
+      }
     }
   };
 
@@ -233,12 +273,18 @@ export default function Home() {
           </div>
 
           <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-            <TabsList className="grid w-full grid-cols-2 bg-muted/30 shadow-soft border border-border rounded-lg p-1">
+            <TabsList className="grid w-full grid-cols-3 bg-muted/30 shadow-soft border border-border rounded-lg p-1">
               <TabsTrigger 
                 value="products" 
                 className="font-medium text-muted-foreground data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm transition-all duration-200 rounded-md"
               >
                 판매상품
+              </TabsTrigger>
+              <TabsTrigger 
+                value="online-products" 
+                className="font-medium text-muted-foreground data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm transition-all duration-200 rounded-md"
+              >
+                온라인상품
               </TabsTrigger>
               <TabsTrigger 
                 value="orders" 
@@ -289,6 +335,38 @@ export default function Home() {
                     이미지 자동생성
                   </FloatingButton>
                 </>
+              )}
+            </TabsContent>
+
+            <TabsContent value="online-products" className="space-y-6">
+              {showOnlineProductForm ? (
+                <OnlineProductForm
+                  onlineProduct={editingOnlineProduct}
+                  products={products}
+                  onSave={handleSaveOnlineProduct}
+                  onCancel={() => {
+                    setShowOnlineProductForm(false);
+                    setEditingOnlineProduct(undefined);
+                  }}
+                  onDelete={isAdmin ? handleDeleteOnlineProduct : undefined}
+                />
+              ) : (
+                <OnlineProductList
+                  onlineProducts={onlineProducts}
+                  onEditProduct={handleEditOnlineProduct}
+                  canEdit={isManagerOrAdmin}
+                  canDelete={isAdmin}
+                />
+              )}
+
+              {!showOnlineProductForm && isManagerOrAdmin && (
+                <FloatingButton
+                  icon={Plus}
+                  onClick={() => setShowOnlineProductForm(true)}
+                  variant="primary"
+                >
+                  온라인상품 등록
+                </FloatingButton>
               )}
             </TabsContent>
 

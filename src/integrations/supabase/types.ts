@@ -140,6 +140,43 @@ export type Database = {
         }
         Relationships: []
       }
+      online_products: {
+        Row: {
+          available_quantity: number
+          created_at: string
+          end_datetime: string
+          id: number
+          product_id: string
+          start_datetime: string
+          updated_at: string
+        }
+        Insert: {
+          available_quantity?: number
+          created_at?: string
+          end_datetime: string
+          id?: number
+          product_id: string
+          start_datetime: string
+          updated_at?: string
+        }
+        Update: {
+          available_quantity?: number
+          created_at?: string
+          end_datetime?: string
+          id?: number
+          product_id?: string
+          start_datetime?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "online_products_product_id_fkey"
+            columns: ["product_id"]
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
     }
     Views: {
       [_ in never]: never
