@@ -177,6 +177,61 @@ export type Database = {
           }
         ]
       }
+      online_orders: {
+        Row: {
+          id: number
+          online_product_id: number
+          quantity: number
+          total_price: number
+          payment_status: Database["public"]["Enums"]["payment_status"]
+          name: string
+          mobile: string
+          orderer_mobile: string
+          address: string
+          address_detail: string | null
+          postcode: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: number
+          online_product_id: number
+          quantity: number
+          total_price: number
+          payment_status?: Database["public"]["Enums"]["payment_status"]
+          name: string
+          mobile: string
+          orderer_mobile: string
+          address: string
+          address_detail?: string | null
+          postcode?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: number
+          online_product_id?: number
+          quantity?: number
+          total_price?: number
+          payment_status?: Database["public"]["Enums"]["payment_status"]
+          name?: string
+          mobile?: string
+          orderer_mobile?: string
+          address?: string
+          address_detail?: string | null
+          postcode?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "online_orders_online_product_id_fkey"
+            columns: ["online_product_id"]
+            referencedRelation: "online_products"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
     }
     Views: {
       [_ in never]: never
@@ -196,6 +251,7 @@ export type Database = {
     }
     Enums: {
       app_role: "admin" | "manager" | "user"
+      payment_status: "입금대기" | "입금완료"
     }
     CompositeTypes: {
       [_ in never]: never
