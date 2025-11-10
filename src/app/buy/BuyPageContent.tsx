@@ -40,8 +40,17 @@ export function BuyPageContent() {
   const [postcode, setPostcode] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [user, setUser] = useState<User | null>(null);
+  const [checkingAuth, setCheckingAuth] = useState(() => {
+    // Check if there's a stored user ID to determine if we should show loading
+    if (typeof window !== 'undefined') {
+      return !!localStorage.getItem('buy_user_id');
+    }
+    return false;
+  });
   const [onlineProduct, setOnlineProduct] = useState<OnlineProduct | null>(null);
   const [loadingProduct, setLoadingProduct] = useState(false);
+  const [onlineProducts, setOnlineProducts] = useState<OnlineProduct[]>([]);
+  const [loadingProducts, setLoadingProducts] = useState(false);
   const [onlineOrders, setOnlineOrders] = useState<OnlineOrder[]>([]);
   const [loadingOrders, setLoadingOrders] = useState(false);
   const [activeTab, setActiveTab] = useState("buy");
@@ -67,9 +76,15 @@ export function BuyPageContent() {
           } else {
             localStorage.removeItem('buy_user_id');
           }
+        } else {
+          // No stored user ID, immediately stop checking
+          setCheckingAuth(false);
         }
       } catch (error) {
         console.error('Error loading user:', error);
+      } finally {
+        // Always stop checking after attempt
+        setCheckingAuth(false);
       }
     };
     
@@ -171,6 +186,42 @@ export function BuyPageContent() {
     };
 
     loadOnlineProduct();
+  }, [productId]);
+
+  // Load all online products if no id is provided
+  useEffect(() => {
+    const loadAllOnlineProducts = async () => {
+      if (productId) return;
+      
+      setLoadingProducts(true);
+      try {
+        const { data, error } = await supabase
+          .from('online_products')
+          .select(`
+            *,
+            product:products(*)
+          `)
+          .order('created_at', { ascending: false });
+
+        if (error) {
+          console.error('Error loading online products:', error);
+          return;
+        }
+
+        const transformed = (data || []).map((item: any) => ({
+          ...item,
+          product: item.product as Product,
+        })) as OnlineProduct[];
+
+        setOnlineProducts(transformed);
+      } catch (error) {
+        console.error('Error loading online products:', error);
+      } finally {
+        setLoadingProducts(false);
+      }
+    };
+
+    loadAllOnlineProducts();
   }, [productId]);
 
   // Auto focus input when component mounts
@@ -505,6 +556,56 @@ export function BuyPageContent() {
     });
   };
 
+  // Filter and sort products based on requirements
+  const getFilteredAndSortedProducts = (): OnlineProduct[] => {
+    const now = new Date();
+    const twelveHoursAgo = new Date(now.getTime() - 12 * 60 * 60 * 1000);
+
+    // Categorize products
+    const availableProducts: OnlineProduct[] = [];
+    const endedProducts: OnlineProduct[] = [];
+
+    onlineProducts.forEach((product) => {
+      const startDate = new Date(product.start_datetime);
+      const endDate = new Date(product.end_datetime);
+      const isInSalePeriod = now >= startDate && now <= endDate;
+      const hasStock = product.available_quantity > 0;
+      const isEndedRecently = endDate < now && endDate > twelveHoursAgo;
+      const isLowStock = product.available_quantity < 1;
+
+      // 현재 일시가 판매기간 사이에 있는 상품 중 재고 수량이 0 초과인 상품
+      if (isInSalePeriod && hasStock) {
+        availableProducts.push(product);
+      }
+      // 판매 종료일이 지났는데 12시간이 안 지난 상품이거나 재고수량이 1 미만인 상품
+      else if (isEndedRecently || isLowStock) {
+        endedProducts.push(product);
+      }
+    });
+
+    // 재고가 많은 순으로 정렬
+    availableProducts.sort((a, b) => b.available_quantity - a.available_quantity);
+    endedProducts.sort((a, b) => b.available_quantity - a.available_quantity);
+
+    // 판매 가능한 상품을 먼저, 그 다음 판매 종료 상품
+    return [...availableProducts, ...endedProducts];
+  };
+
+  // Check if product is ended (for dimmed display)
+  const isProductEnded = (product: OnlineProduct): boolean => {
+    const now = new Date();
+    const twelveHoursAgo = new Date(now.getTime() - 12 * 60 * 60 * 1000);
+    const endDate = new Date(product.end_datetime);
+    const isEndedRecently = endDate < now && endDate > twelveHoursAgo;
+    const isLowStock = product.available_quantity < 1;
+    return isEndedRecently || isLowStock;
+  };
+
+  // Remove line breaks from product name
+  const cleanProductName = (name: string): string => {
+    return name.replace(/\r?\n|\r/g, ' ').replace(/\s+/g, ' ').trim();
+  };
+
   // Handle order
   const handleOrder = async () => {
     if (!user || !user.name) {
@@ -776,9 +877,69 @@ export function BuyPageContent() {
 
               <TabsContent value="buy" className="space-y-6">
                 {!productId ? (
-                  <div className="text-center py-12">
-                    <p className="text-muted-foreground">상품 ID가 제공되지 않았습니다.</p>
-                  </div>
+                  loadingProducts ? (
+                    <div className="text-center py-12">
+                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
+                      <p className="text-muted-foreground">상품을 불러오는 중...</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-6">
+                      <h2 className="text-2xl font-bold text-foreground">상품 목록</h2>
+                      {getFilteredAndSortedProducts().length === 0 ? (
+                        <div className="text-center py-12">
+                          <p className="text-muted-foreground">판매 중인 상품이 없습니다.</p>
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                          {getFilteredAndSortedProducts().map((product) => {
+                            const isEnded = isProductEnded(product);
+                            return (
+                              <Card
+                                key={product.id}
+                                className={`bg-gradient-card shadow-medium cursor-pointer transition-all hover:shadow-lg ${
+                                  isEnded ? 'opacity-60' : ''
+                                }`}
+                                onClick={() => {
+                                  window.location.href = `/buy?id=${product.id}`;
+                                }}
+                              >
+                                <div className="relative">
+                                  {product.product.image_url ? (
+                                    <div className="aspect-square w-full overflow-hidden rounded-t-lg">
+                                      <img
+                                        src={product.product.image_url}
+                                        alt={cleanProductName(product.product.name)}
+                                        className="w-full h-full object-cover"
+                                      />
+                                    </div>
+                                  ) : (
+                                    <div className="aspect-square w-full bg-muted flex items-center justify-center rounded-t-lg">
+                                      <Package className="h-16 w-16 text-muted-foreground" />
+                                    </div>
+                                  )}
+                                  {isEnded && (
+                                    <div className="absolute inset-0 bg-black/50 flex items-center justify-center rounded-t-lg">
+                                      <Badge variant="destructive" className="text-lg px-4 py-2">
+                                        판매 종료
+                                      </Badge>
+                                    </div>
+                                  )}
+                                </div>
+                                <CardContent className="p-4">
+                                  <h3 className="text-lg font-bold text-foreground mb-2 line-clamp-2">
+                                    {cleanProductName(product.product.name)}
+                                  </h3>
+                                  <p className="text-2xl font-bold text-primary">
+                                    {product.product.price.toLocaleString()}원
+                                  </p>
+                                </CardContent>
+                              </Card>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )
                 ) : loadingProduct ? (
                   <div className="text-center py-12">
                     <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
@@ -1136,6 +1297,94 @@ export function BuyPageContent() {
             </DialogContent>
           </Dialog>
         </div>
+    );
+  }
+
+  // Show login form or product list
+  // If no productId, show product list even when not logged in
+  if (!productId) {
+    return (
+      <div className="min-h-screen bg-background">
+        <main className="container mx-auto px-4 py-8">
+          <div className="space-y-6">
+            <h2 className="text-2xl font-bold text-foreground">상품 목록</h2>
+            {loadingProducts ? (
+              <div className="text-center py-12">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
+                <p className="text-muted-foreground">상품을 불러오는 중...</p>
+              </div>
+            ) : (
+              <>
+                {getFilteredAndSortedProducts().length === 0 ? (
+                  <div className="text-center py-12">
+                    <p className="text-muted-foreground">판매 중인 상품이 없습니다.</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {getFilteredAndSortedProducts().map((product) => {
+                      const isEnded = isProductEnded(product);
+                      return (
+                        <Card
+                          key={product.id}
+                          className={`bg-gradient-card shadow-medium cursor-pointer transition-all hover:shadow-lg ${
+                            isEnded ? 'opacity-60' : ''
+                          }`}
+                          onClick={() => {
+                            window.location.href = `/buy?id=${product.id}`;
+                          }}
+                        >
+                          <div className="relative">
+                            {product.product.image_url ? (
+                              <div className="aspect-square w-full overflow-hidden rounded-t-lg">
+                                <img
+                                  src={product.product.image_url}
+                                  alt={cleanProductName(product.product.name)}
+                                  className="w-full h-full object-cover"
+                                />
+                              </div>
+                            ) : (
+                              <div className="aspect-square w-full bg-muted flex items-center justify-center rounded-t-lg">
+                                <Package className="h-16 w-16 text-muted-foreground" />
+                              </div>
+                            )}
+                            {isEnded && (
+                              <div className="absolute inset-0 bg-black/50 flex items-center justify-center rounded-t-lg">
+                                <Badge variant="destructive" className="text-lg px-4 py-2">
+                                  판매 종료
+                                </Badge>
+                              </div>
+                            )}
+                          </div>
+                          <CardContent className="p-4">
+                            <h3 className="text-lg font-bold text-foreground mb-2 line-clamp-2">
+                              {cleanProductName(product.product.name)}
+                            </h3>
+                            <p className="text-2xl font-bold text-primary">
+                              {product.product.price.toLocaleString()}원
+                            </p>
+                          </CardContent>
+                        </Card>
+                      );
+                    })}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        </main>
+      </div>
+    );
+  }
+
+  // Show loading screen while checking auth status (to prevent flash of login screen)
+  if (checkingAuth) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
+          <p className="text-muted-foreground">로딩 중...</p>
+        </div>
+      </div>
     );
   }
 

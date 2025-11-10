@@ -14,9 +14,37 @@ export async function generateMetadata({ searchParams }: Props): Promise<Metadat
 
   // If no product ID, return default metadata
   if (!productId) {
+    const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://jhshop.vercel.app';
+    const ogImageUrl = `${baseUrl}/og.png`;
     return {
-      title: '상품 구매 | 과실당',
-      description: '과실당 상품 구매 페이지',
+      title: '과실당 온라인',
+      description: '엄선된 상품을 온라인에서 주문하세요',
+      openGraph: {
+        title: '과실당 온라인',
+        description: '엄선된 상품을 온라인에서 주문하세요',
+        type: 'website',
+        url: `${baseUrl}/buy`,
+        images: [
+          {
+            url: ogImageUrl,
+            width: 1200,
+            height: 630,
+            alt: '과실당 온라인',
+          },
+        ],
+      },
+      twitter: {
+        card: 'summary_large_image',
+        title: '과실당 온라인',
+        description: '엄선된 상품을 온라인에서 주문하세요',
+        images: [ogImageUrl],
+      },
+      // KakaoTalk specific meta tags
+      other: {
+        'og:image:width': '1200',
+        'og:image:height': '630',
+        'og:image:type': 'image/png',
+      },
     };
   }
 
