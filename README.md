@@ -45,6 +45,11 @@ VITE_SUPABASE_ANON_KEY=your_supabase_anon_key_here
 
 # OpenAI API Configuration
 VITE_OPENAI_API_KEY=your_openai_api_key_here
+
+# Gmail Email Configuration (주문 완료 이메일 발송용)
+GMAIL_USER=your_gmail_address@gmail.com
+GMAIL_APP_PASSWORD=your_gmail_app_password
+ORDER_EMAIL_RECIPIENT=recipient_email@gmail.com
 ```
 
 ### 2. OpenAI API 키 발급
@@ -52,7 +57,24 @@ VITE_OPENAI_API_KEY=your_openai_api_key_here
 2. API 키 생성
 3. `.env` 파일에 `VITE_OPENAI_API_KEY`로 설정
 
-### 3. 카카오톡 대화 내보내기
+### 3. Gmail 이메일 설정 (주문 완료 알림용)
+주문 완료 시 자동으로 이메일이 발송되도록 Gmail을 설정합니다:
+
+1. **Gmail 앱 비밀번호 생성**
+   - Google 계정 설정 페이지로 이동: https://myaccount.google.com/
+   - 보안 > 2단계 인증 활성화 (필수)
+   - 보안 > 앱 비밀번호 생성
+   - "메일" 및 "기타(맞춤 이름)" 선택 후 이름 입력 (예: "주문 시스템")
+   - 생성된 16자리 앱 비밀번호 복사
+
+2. **환경변수 설정**
+   - `GMAIL_USER`: 발송할 Gmail 주소 (예: yourname@gmail.com)
+   - `GMAIL_APP_PASSWORD`: 위에서 생성한 16자리 앱 비밀번호
+   - `ORDER_EMAIL_RECIPIENT`: 주문 알림을 받을 이메일 주소 (기본 수신자)
+
+**참고**: 앱 비밀번호는 일반 Gmail 비밀번호가 아닙니다. 2단계 인증을 활성화한 후 생성해야 합니다.
+
+### 4. 카카오톡 대화 내보내기
 1. 카카오톡에서 대화방 선택
 2. 설정 > 대화 내보내기
 3. 텍스트 파일(.txt)로 저장

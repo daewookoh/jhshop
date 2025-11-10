@@ -710,6 +710,29 @@ export function BuyPageContent() {
         // Order was created but quantity update failed - this is a problem but we'll continue
       }
 
+      // Send order confirmation email
+      try {
+        const emailResponse = await fetch('/api/send-order-email', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            productName: onlineProduct.product.name,
+            quantity: quantity,
+          }),
+        });
+
+        if (!emailResponse.ok) {
+          const errorData = await emailResponse.json();
+          console.error('이메일 발송 실패:', errorData);
+          // 이메일 발송 실패해도 주문은 완료된 것으로 처리
+        }
+      } catch (emailError) {
+        console.error('이메일 발송 중 오류:', emailError);
+        // 이메일 발송 실패해도 주문은 완료된 것으로 처리
+      }
+
       toast.success('주문이 완료되었습니다.');
       setQuantity(1);
       setOrdererName("");
