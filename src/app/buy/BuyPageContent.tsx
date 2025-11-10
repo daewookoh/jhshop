@@ -977,15 +977,15 @@ export function BuyPageContent() {
                       <div className="text-sm font-medium text-muted-foreground">입금계좌</div>
                       <div className="flex items-center justify-center gap-4 flex-wrap">
                         <div className="text-2xl font-bold text-foreground">
-                          {Constants.depositAccount.bank}
+                          {Constants.depositAccount.bank}({Constants.depositAccount.accountHolder})
                         </div>
                         <div className="text-2xl font-bold text-primary">
                           {Constants.depositAccount.accountNumber}
-                          {Constants.depositAccount.accountHolder && (
+                          {/* {Constants.depositAccount.accountHolder && (
                             <span className="text-lg font-normal text-muted-foreground ml-2">
                               ({Constants.depositAccount.accountHolder})
                             </span>
-                          )}
+                          )} */}
                         </div>
                         <Button
                           variant="outline"
