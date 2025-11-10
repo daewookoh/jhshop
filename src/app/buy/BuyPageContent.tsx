@@ -489,15 +489,19 @@ export function BuyPageContent() {
     };
   };
 
-  // Get payment deadline (마감일 오후 12:00)
+  // Get payment deadline
   const getPaymentDeadline = (): string => {
     if (!onlineProduct) return '';
     const endDate = new Date(onlineProduct.end_datetime);
-    endDate.setHours(12, 0, 0, 0);
-    return endDate.toLocaleDateString('ko-KR', {
+    endDate.setDate(endDate.getDate() + 1); // 다음날로 변경
+    endDate.setHours(11, 59, 0, 0);
+    return endDate.toLocaleString('ko-KR', {
       year: 'numeric',
       month: '2-digit',
       day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true,
     });
   };
 
@@ -929,7 +933,7 @@ export function BuyPageContent() {
                             <Alert>
                               <AlertCircle className="h-4 w-4" />
                               <AlertDescription>
-                                입금마감기한: {paymentDeadline} 오후 12:00
+                                입금마감기한: {paymentDeadline}
                               </AlertDescription>
                             </Alert>
                           )}
