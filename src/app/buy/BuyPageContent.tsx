@@ -712,6 +712,15 @@ export function BuyPageContent() {
 
       // Send order confirmation email
       try {
+        const now = new Date();
+        const orderDate = now.toLocaleString('ko-KR', {
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit',
+        });
+
         const emailResponse = await fetch('/api/send-order-email', {
           method: 'POST',
           headers: {
@@ -719,7 +728,20 @@ export function BuyPageContent() {
           },
           body: JSON.stringify({
             productName: onlineProduct.product.name,
+            productPrice: onlineProduct.product.price,
             quantity: quantity,
+            productTotal: calculateProductPrice(),
+            shippingFee: shippingFee,
+            totalPrice: calculateTotalPrice(),
+            paymentStatus: '입금대기',
+            ordererName: user.name,
+            ordererMobile: user.mobile,
+            recipientName: ordererName.trim(),
+            recipientMobile: ordererMobile.trim(),
+            address: address.trim(),
+            addressDetail: addressDetail.trim() || undefined,
+            postcode: postcode.trim() || undefined,
+            orderDate: orderDate,
           }),
         });
 
