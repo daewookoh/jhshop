@@ -10,8 +10,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { LogIn, AlertCircle, LogOut, ShoppingCart, Package, Search, Copy, History } from "lucide-react";
+import { LogIn, AlertCircle, LogOut, ShoppingCart, Package, Search, Copy, History, X } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -56,6 +57,8 @@ export function BuyPageContent() {
   const [activeTab, setActiveTab] = useState("buy");
   const [showAddressDialog, setShowAddressDialog] = useState(false);
   const [showOrderHistoryDialog, setShowOrderHistoryDialog] = useState(false);
+  const [cancelOrderId, setCancelOrderId] = useState<number | null>(null);
+  const [showCancelDialog, setShowCancelDialog] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const nameInputRef = useRef<HTMLInputElement>(null);
 
@@ -469,6 +472,50 @@ export function BuyPageContent() {
     
     setShowOrderHistoryDialog(false);
     toast.success('주문정보가 입력되었습니다.');
+  };
+
+  // Handle cancel order
+  const handleCancelOrder = async () => {
+    if (!cancelOrderId) return;
+
+    setIsLoading(true);
+    try {
+      const { error } = await supabase
+        .from('online_orders')
+        .update({ payment_status: '예약취소' as any })
+        .eq('id', cancelOrderId);
+
+      if (error) {
+        console.error('Error cancelling order:', error);
+        toast.error('주문 취소에 실패했습니다.');
+        setIsLoading(false);
+        return;
+      }
+
+      // Update local state
+      setOnlineOrders(prevOrders =>
+        prevOrders.map(order =>
+          order.id === cancelOrderId
+            ? { ...order, payment_status: '예약취소' as any }
+            : order
+        )
+      );
+
+      toast.success('주문이 취소되었습니다.');
+      setShowCancelDialog(false);
+      setCancelOrderId(null);
+    } catch (error) {
+      console.error('Cancel order error:', error);
+      toast.error('주문 취소 중 오류가 발생했습니다.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Open cancel dialog
+  const openCancelDialog = (orderId: number) => {
+    setCancelOrderId(orderId);
+    setShowCancelDialog(true);
   };
 
   // Get full address with detail
@@ -1228,58 +1275,91 @@ export function BuyPageContent() {
                   </div>
                 ) : (
                   <div className="space-y-4">
-                    {onlineOrders.map((order) => (
-                      <Card key={order.id} className="bg-gradient-card shadow-medium">
-                        <CardHeader className="pb-4">
-                          <div className="flex items-center justify-between">
-                            <CardTitle className="text-lg font-bold text-foreground">
-                              {order.online_product.product.name}
-                            </CardTitle>
-                            <Badge variant={order.payment_status === '입금완료' ? 'default' : 'secondary'}>
-                              {order.payment_status}
-                            </Badge>
-                          </div>
-                        </CardHeader>
-                        <CardContent className="space-y-3">
-                          <div className="grid grid-cols-2 gap-4 text-sm">
-                            <div>
-                              <span className="text-muted-foreground">수량:</span>
-                              <span className="ml-2 font-medium">{order.quantity}개</span>
-                            </div>
-                            <div>
-                              <span className="text-muted-foreground">총 가격:</span>
-                              <span className="ml-2 font-bold text-primary">{order.total_price.toLocaleString()}원</span>
-                            </div>
-                            {(order as any).shipping_fee && (
-                              <div>
-                                <span className="text-muted-foreground">배송비:</span>
-                                <span className="ml-2 font-medium">{(order as any).shipping_fee.toLocaleString()}원</span>
+                    {onlineOrders.map((order) => {
+                      const isCancelled = (order.payment_status as string) === '예약취소';
+                      const canCancel = order.payment_status === '입금대기';
+                      
+                      return (
+                        <Card 
+                          key={order.id} 
+                          className={`shadow-medium ${
+                            isCancelled 
+                              ? 'bg-red-50 dark:bg-red-950/20 border-red-200 dark:border-red-900' 
+                              : 'bg-gradient-card'
+                          }`}
+                        >
+                          <CardHeader className="pb-4">
+                            <div className="flex items-center justify-between">
+                              <CardTitle className="text-lg font-bold text-foreground">
+                                {order.online_product.product.name}
+                              </CardTitle>
+                              <div className="flex items-center gap-2">
+                                <Badge 
+                                  variant={
+                                    order.payment_status === '입금완료' 
+                                      ? 'default' 
+                                      : (order.payment_status as string) === '예약취소'
+                                      ? 'destructive'
+                                      : 'secondary'
+                                  }
+                                >
+                                  {order.payment_status}
+                                </Badge>
+                                {canCancel && (
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => openCancelDialog(order.id)}
+                                    className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                                  >
+                                    <X className="h-4 w-4 mr-1" />
+                                    취소
+                                  </Button>
+                                )}
                               </div>
-                            )}
-                            <div>
-                              <span className="text-muted-foreground">받는분:</span>
-                              <span className="ml-2 font-medium">{order.name}</span>
                             </div>
-                            <div>
-                              <span className="text-muted-foreground">받는분 휴대폰:</span>
-                              <span className="ml-2 font-medium">{formatMobile(order.mobile)}</span>
+                          </CardHeader>
+                          <CardContent className="space-y-3">
+                            <div className="grid grid-cols-2 gap-4 text-sm">
+                              <div>
+                                <span className="text-muted-foreground">수량:</span>
+                                <span className="ml-2 font-medium">{order.quantity}개</span>
+                              </div>
+                              <div>
+                                <span className="text-muted-foreground">총 가격:</span>
+                                <span className="ml-2 font-bold text-primary">{order.total_price.toLocaleString()}원</span>
+                              </div>
+                              {(order as any).shipping_fee && (
+                                <div>
+                                  <span className="text-muted-foreground">배송비:</span>
+                                  <span className="ml-2 font-medium">{(order as any).shipping_fee.toLocaleString()}원</span>
+                                </div>
+                              )}
+                              <div>
+                                <span className="text-muted-foreground">받는분:</span>
+                                <span className="ml-2 font-medium">{order.name}</span>
+                              </div>
+                              <div>
+                                <span className="text-muted-foreground">받는분 휴대폰:</span>
+                                <span className="ml-2 font-medium">{formatMobile(order.mobile)}</span>
+                              </div>
+                              <div className="col-span-2">
+                                <span className="text-muted-foreground">주소:</span>
+                                <span className="ml-2 font-medium whitespace-pre-line">
+                                  {order.postcode && `[${order.postcode}] `}
+                                  {order.address}
+                                  {(order as any).address_detail && ` ${(order as any).address_detail}`}
+                                </span>
+                              </div>
+                              <div className="col-span-2">
+                                <span className="text-muted-foreground">주문일시:</span>
+                                <span className="ml-2 font-medium">{formatDateTime(order.created_at)}</span>
+                              </div>
                             </div>
-                            <div className="col-span-2">
-                              <span className="text-muted-foreground">주소:</span>
-                              <span className="ml-2 font-medium whitespace-pre-line">
-                                {order.postcode && `[${order.postcode}] `}
-                                {order.address}
-                                {(order as any).address_detail && ` ${(order as any).address_detail}`}
-                              </span>
-                            </div>
-                            <div className="col-span-2">
-                              <span className="text-muted-foreground">주문일시:</span>
-                              <span className="ml-2 font-medium">{formatDateTime(order.created_at)}</span>
-                            </div>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    ))}
+                          </CardContent>
+                        </Card>
+                      );
+                    })}
                   </div>
                 )}
               </TabsContent>
@@ -1341,6 +1421,29 @@ export function BuyPageContent() {
               </div>
             </DialogContent>
           </Dialog>
+
+          {/* Cancel Order Confirmation Dialog */}
+          <AlertDialog open={showCancelDialog} onOpenChange={setShowCancelDialog}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>주문 취소 확인</AlertDialogTitle>
+                <AlertDialogDescription>
+                  주문취소시 복구할수 없습니다. 취소하시겠습니까?
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel onClick={() => setCancelOrderId(null)}>
+                  아니오
+                </AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={handleCancelOrder}
+                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                >
+                  예
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </div>
     );
   }

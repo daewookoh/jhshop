@@ -19,7 +19,7 @@ type OnlineOrder = {
   online_product_id: number;
   quantity: number;
   total_price: number;
-  payment_status: '입금대기' | '입금완료';
+  payment_status: '입금대기' | '입금완료' | '예약취소';
   name: string;
   mobile: string;
   orderer_mobile: string;
@@ -45,7 +45,7 @@ export function OnlineOrderList() {
   const [editForm, setEditForm] = useState({
     quantity: 1,
     total_price: 0,
-    payment_status: '입금대기' as '입금대기' | '입금완료',
+    payment_status: '입금대기' as '입금대기' | '입금완료' | '예약취소',
     name: '',
     mobile: '',
     address: '',
@@ -108,12 +108,12 @@ export function OnlineOrderList() {
     }
   };
 
-  const handleStatusChange = async (orderId: number, newStatus: '입금대기' | '입금완료') => {
+  const handleStatusChange = async (orderId: number, newStatus: '입금대기' | '입금완료' | '예약취소') => {
     setUpdatingStatus(orderId);
     try {
       const { error } = await supabase
         .from('online_orders')
-        .update({ payment_status: newStatus })
+        .update({ payment_status: newStatus as any })
         .eq('id', orderId);
 
       if (error) {
@@ -187,7 +187,7 @@ export function OnlineOrderList() {
         .update({
           quantity: editForm.quantity,
           total_price: editForm.total_price,
-          payment_status: editForm.payment_status,
+          payment_status: editForm.payment_status as any,
           name: editForm.name.trim(),
           mobile: editForm.mobile.trim(),
           address: editForm.address.trim(),
@@ -383,15 +383,21 @@ export function OnlineOrderList() {
             <p className="text-muted-foreground">주문이 없습니다.</p>
           </div>
         ) : (
-          filteredOrders.map((order) => (
-            <Card 
-              key={order.id} 
-              className={`bg-gradient-card shadow-medium ${
-                order.payment_status === '입금완료' 
-                  ? 'bg-green-50 border-green-200 dark:bg-green-950 dark:border-green-800' 
-                  : ''
-              }`}
-            >
+          filteredOrders.map((order) => {
+            const isCancelled = (order.payment_status as string) === '예약취소';
+            const isPaid = order.payment_status === '입금완료';
+            
+            return (
+              <Card 
+                key={order.id} 
+                className={`shadow-medium ${
+                  isCancelled
+                    ? 'bg-red-50 dark:bg-red-950/20 border-red-200 dark:border-red-900'
+                    : isPaid
+                    ? 'bg-green-50 border-green-200 dark:bg-green-950 dark:border-green-800'
+                    : 'bg-gradient-card'
+                }`}
+              >
               <CardHeader className="pb-4">
                 <div className="flex items-center justify-between">
                   <CardTitle className="text-lg font-bold text-foreground">
@@ -407,7 +413,7 @@ export function OnlineOrderList() {
                     </Button>
                     <Select
                       value={order.payment_status}
-                      onValueChange={(value: '입금대기' | '입금완료') => handleStatusChange(order.id, value)}
+                      onValueChange={(value: '입금대기' | '입금완료' | '예약취소') => handleStatusChange(order.id, value)}
                       disabled={updatingStatus === order.id}
                     >
                       <SelectTrigger className="w-[100px]">
@@ -416,6 +422,7 @@ export function OnlineOrderList() {
                       <SelectContent>
                         <SelectItem value="입금대기">입금대기</SelectItem>
                         <SelectItem value="입금완료">입금완료</SelectItem>
+                        <SelectItem value="예약취소">예약취소</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -486,12 +493,17 @@ export function OnlineOrderList() {
               ) : (
                 filteredOrders.map((order) => {
                   const saleStatus = getSaleStatus(order);
+                  const isCancelled = (order.payment_status as string) === '예약취소';
+                  const isPaid = order.payment_status === '입금완료';
+                  
                   return (
                     <tr 
                       key={order.id} 
                       className={`border-b border-border ${
-                        order.payment_status === '입금완료' 
-                          ? 'bg-green-50 dark:bg-green-950 hover:bg-green-100 dark:hover:bg-green-900 border-green-200 dark:border-green-800' 
+                        isCancelled
+                          ? 'bg-red-50 dark:bg-red-950/20 hover:bg-red-100 dark:hover:bg-red-900/30 border-red-200 dark:border-red-900'
+                          : isPaid
+                          ? 'bg-green-50 dark:bg-green-950 hover:bg-green-100 dark:hover:bg-green-900 border-green-200 dark:border-green-800'
                           : 'hover:bg-muted/50'
                       }`}
                     >
@@ -521,7 +533,7 @@ export function OnlineOrderList() {
                       <td className="p-4 text-center text-sm">
                         <Select
                           value={order.payment_status}
-                          onValueChange={(value: '입금대기' | '입금완료') => handleStatusChange(order.id, value)}
+                          onValueChange={(value: '입금대기' | '입금완료' | '예약취소') => handleStatusChange(order.id, value)}
                           disabled={updatingStatus === order.id}
                         >
                           <SelectTrigger className="w-[100px]">
@@ -530,6 +542,7 @@ export function OnlineOrderList() {
                           <SelectContent>
                             <SelectItem value="입금대기">입금대기</SelectItem>
                             <SelectItem value="입금완료">입금완료</SelectItem>
+                            <SelectItem value="예약취소">예약취소</SelectItem>
                           </SelectContent>
                         </Select>
                       </td>
@@ -606,7 +619,7 @@ export function OnlineOrderList() {
                 <Label htmlFor="edit-payment-status">입금상태</Label>
                 <Select
                   value={editForm.payment_status}
-                  onValueChange={(value: '입금대기' | '입금완료') => setEditForm(prev => ({ ...prev, payment_status: value }))}
+                  onValueChange={(value: '입금대기' | '입금완료' | '예약취소') => setEditForm(prev => ({ ...prev, payment_status: value }))}
                 >
                   <SelectTrigger>
                     <SelectValue />
@@ -614,6 +627,7 @@ export function OnlineOrderList() {
                   <SelectContent>
                     <SelectItem value="입금대기">입금대기</SelectItem>
                     <SelectItem value="입금완료">입금완료</SelectItem>
+                    <SelectItem value="예약취소">예약취소</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
