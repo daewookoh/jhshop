@@ -19,7 +19,7 @@ type OnlineOrder = {
   online_product_id: number;
   quantity: number;
   total_price: number;
-  payment_status: '입금대기' | '입금완료' | '예약취소';
+  payment_status: '입금대기' | '입금완료' | '주문취소';
   name: string;
   mobile: string;
   orderer_mobile: string;
@@ -45,7 +45,7 @@ export function OnlineOrderList() {
   const [editForm, setEditForm] = useState({
     quantity: 1,
     total_price: 0,
-    payment_status: '입금대기' as '입금대기' | '입금완료' | '예약취소',
+    payment_status: '입금대기' as '입금대기' | '입금완료' | '주문취소',
     name: '',
     mobile: '',
     address: '',
@@ -108,7 +108,7 @@ export function OnlineOrderList() {
     }
   };
 
-  const handleStatusChange = async (orderId: number, newStatus: '입금대기' | '입금완료' | '예약취소') => {
+  const handleStatusChange = async (orderId: number, newStatus: '입금대기' | '입금완료' | '주문취소') => {
     setUpdatingStatus(orderId);
     try {
       const { error } = await supabase
@@ -384,7 +384,7 @@ export function OnlineOrderList() {
           </div>
         ) : (
           filteredOrders.map((order) => {
-            const isCancelled = (order.payment_status as string) === '예약취소';
+            const isCancelled = (order.payment_status as string) === '주문취소';
             const isPaid = order.payment_status === '입금완료';
             
             return (
@@ -398,72 +398,73 @@ export function OnlineOrderList() {
                     : 'bg-gradient-card'
                 }`}
               >
-              <CardHeader className="pb-4">
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-lg font-bold text-foreground">
-                    [{order.online_product_id}] {order.online_product.product.name}
-                  </CardTitle>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleEditClick(order)}
-                    >
-                      <Edit className="h-4 w-4" />
-                    </Button>
-                    <Select
-                      value={order.payment_status}
-                      onValueChange={(value: '입금대기' | '입금완료' | '예약취소') => handleStatusChange(order.id, value)}
-                      disabled={updatingStatus === order.id}
-                    >
-                      <SelectTrigger className="w-[100px]">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="입금대기">입금대기</SelectItem>
-                        <SelectItem value="입금완료">입금완료</SelectItem>
-                        <SelectItem value="예약취소">예약취소</SelectItem>
-                      </SelectContent>
-                    </Select>
+                <CardHeader className="pb-4">
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-lg font-bold text-foreground">
+                      [{order.online_product_id}] {order.online_product.product.name}
+                    </CardTitle>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleEditClick(order)}
+                      >
+                        <Edit className="h-4 w-4" />
+                      </Button>
+                      <Select
+                        value={order.payment_status}
+                        onValueChange={(value: '입금대기' | '입금완료' | '주문취소') => handleStatusChange(order.id, value)}
+                        disabled={updatingStatus === order.id}
+                      >
+                        <SelectTrigger className="w-[100px]">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="입금대기">입금대기</SelectItem>
+                          <SelectItem value="입금완료">입금완료</SelectItem>
+                          <SelectItem value="주문취소">주문취소</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
                   </div>
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="space-y-2 text-sm">
-                  <div>
-                    <span className="text-muted-foreground">온라인상품ID:</span>
-                    <span className="ml-2 font-medium">{order.online_product_id}</span>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div className="space-y-2 text-sm">
+                    <div>
+                      <span className="text-muted-foreground">온라인상품ID:</span>
+                      <span className="ml-2 font-medium">{order.online_product_id}</span>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">판매상태:</span>
+                      <span className="ml-2">
+                        <Badge variant={getSaleStatus(order).variant}>
+                          {getSaleStatus(order).label}
+                        </Badge>
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">수량:</span>
+                      <span className="ml-2 font-medium">{order.quantity}개</span>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">총 가격:</span>
+                      <span className="ml-2 font-bold text-primary">{order.total_price.toLocaleString()}원</span>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">주문자:</span>
+                      <span className="ml-2 font-medium">
+                        {order.orderer_name || '-'} ({formatMobile(order.orderer_mobile)})
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">주문일시:</span>
+                      <span className="ml-2 font-medium">{formatDateTime(order.created_at)}</span>
+                    </div>
                   </div>
-                  <div>
-                    <span className="text-muted-foreground">판매상태:</span>
-                    <span className="ml-2">
-                      <Badge variant={getSaleStatus(order).variant}>
-                        {getSaleStatus(order).label}
-                      </Badge>
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground">수량:</span>
-                    <span className="ml-2 font-medium">{order.quantity}개</span>
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground">총 가격:</span>
-                    <span className="ml-2 font-bold text-primary">{order.total_price.toLocaleString()}원</span>
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground">주문자:</span>
-                    <span className="ml-2 font-medium">
-                      {order.orderer_name || '-'} ({formatMobile(order.orderer_mobile)})
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground">주문일시:</span>
-                    <span className="ml-2 font-medium">{formatDateTime(order.created_at)}</span>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          ))
+                </CardContent>
+              </Card>
+            );
+          })
         )}
       </div>
 
@@ -475,8 +476,7 @@ export function OnlineOrderList() {
               <tr>
                 <th className="text-left p-4 text-sm font-medium">온라인상품ID</th>
                 <th className="text-left p-4 text-sm font-medium">주문일시</th>
-                <th className="text-left p-4 text-sm font-medium">상품명</th>
-                <th className="text-left p-4 text-sm font-medium">판매상태</th>
+                <th className="text-left p-4 text-sm font-medium">상품명<br />판매상태</th>
                 <th className="text-left p-4 text-sm font-medium">수량<br />총 가격</th>
                 <th className="text-left p-4 text-sm font-medium">주문자<br />주문자 휴대폰</th>
                 <th className="text-center p-4 text-sm font-medium">입금상태</th>
@@ -486,14 +486,14 @@ export function OnlineOrderList() {
             <tbody>
               {filteredOrders.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="text-center py-12 text-muted-foreground">
+                  <td colSpan={7} className="text-center py-12 text-muted-foreground">
                     주문이 없습니다.
                   </td>
                 </tr>
               ) : (
                 filteredOrders.map((order) => {
                   const saleStatus = getSaleStatus(order);
-                  const isCancelled = (order.payment_status as string) === '예약취소';
+                  const isCancelled = (order.payment_status as string) === '주문취소';
                   const isPaid = order.payment_status === '입금완료';
                   
                   return (
@@ -510,13 +510,11 @@ export function OnlineOrderList() {
                       <td className="p-4 text-sm font-medium">
                         {order.online_product_id}
                       </td>
-                      <td className="p-4 text-sm">
+                      <td className="p-4 text-sm w-[120px]">
                         {formatDateTime(order.created_at)}
                       </td>
                       <td className="p-4 text-sm">
-                        <div className="font-medium">{order.online_product.product.name}</div>
-                      </td>
-                      <td className="p-4 text-sm">
+                        <div className="font-medium mb-2">{order.online_product.product.name}</div>
                         <Badge variant={saleStatus.variant}>
                           {saleStatus.label}
                         </Badge>
@@ -533,7 +531,7 @@ export function OnlineOrderList() {
                       <td className="p-4 text-center text-sm">
                         <Select
                           value={order.payment_status}
-                          onValueChange={(value: '입금대기' | '입금완료' | '예약취소') => handleStatusChange(order.id, value)}
+                          onValueChange={(value: '입금대기' | '입금완료' | '주문취소') => handleStatusChange(order.id, value)}
                           disabled={updatingStatus === order.id}
                         >
                           <SelectTrigger className="w-[100px]">
@@ -542,7 +540,7 @@ export function OnlineOrderList() {
                           <SelectContent>
                             <SelectItem value="입금대기">입금대기</SelectItem>
                             <SelectItem value="입금완료">입금완료</SelectItem>
-                            <SelectItem value="예약취소">예약취소</SelectItem>
+                            <SelectItem value="주문취소">주문취소</SelectItem>
                           </SelectContent>
                         </Select>
                       </td>
@@ -619,7 +617,7 @@ export function OnlineOrderList() {
                 <Label htmlFor="edit-payment-status">입금상태</Label>
                 <Select
                   value={editForm.payment_status}
-                  onValueChange={(value: '입금대기' | '입금완료' | '예약취소') => setEditForm(prev => ({ ...prev, payment_status: value }))}
+                  onValueChange={(value: '입금대기' | '입금완료' | '주문취소') => setEditForm(prev => ({ ...prev, payment_status: value }))}
                 >
                   <SelectTrigger>
                     <SelectValue />
@@ -627,7 +625,7 @@ export function OnlineOrderList() {
                   <SelectContent>
                     <SelectItem value="입금대기">입금대기</SelectItem>
                     <SelectItem value="입금완료">입금완료</SelectItem>
-                    <SelectItem value="예약취소">예약취소</SelectItem>
+                    <SelectItem value="주문취소">주문취소</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

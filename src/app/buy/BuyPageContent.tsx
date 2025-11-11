@@ -482,7 +482,7 @@ export function BuyPageContent() {
     try {
       const { error } = await supabase
         .from('online_orders')
-        .update({ payment_status: '예약취소' as any })
+        .update({ payment_status: '주문취소' as any })
         .eq('id', cancelOrderId);
 
       if (error) {
@@ -496,7 +496,7 @@ export function BuyPageContent() {
       setOnlineOrders(prevOrders =>
         prevOrders.map(order =>
           order.id === cancelOrderId
-            ? { ...order, payment_status: '예약취소' as any }
+            ? { ...order, payment_status: '주문취소' as any }
             : order
         )
       );
@@ -1276,7 +1276,7 @@ export function BuyPageContent() {
                 ) : (
                   <div className="space-y-4">
                     {onlineOrders.map((order) => {
-                      const isCancelled = (order.payment_status as string) === '예약취소';
+                      const isCancelled = (order.payment_status as string) === '주문취소';
                       const canCancel = order.payment_status === '입금대기';
                       
                       return (
@@ -1298,7 +1298,7 @@ export function BuyPageContent() {
                                   variant={
                                     order.payment_status === '입금완료' 
                                       ? 'default' 
-                                      : (order.payment_status as string) === '예약취소'
+                                      : (order.payment_status as string) === '주문취소'
                                       ? 'destructive'
                                       : 'secondary'
                                   }
