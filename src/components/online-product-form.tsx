@@ -28,6 +28,7 @@ interface OnlineProductFormProps {
     start_datetime: string;
     end_datetime: string;
     available_quantity: number;
+    shipping_fee: number;
   }) => Promise<void>;
   onCancel: () => void;
   onDelete?: (id: number) => void;
@@ -49,6 +50,9 @@ export function OnlineProductForm({ onlineProduct, products, onSave, onCancel, o
   );
   const [availableQuantity, setAvailableQuantity] = useState(
     onlineProduct?.available_quantity?.toString() || "0"
+  );
+  const [shippingFee, setShippingFee] = useState(
+    (onlineProduct as any)?.shipping_fee?.toString() || "4000"
   );
   const [productSearchOpen, setProductSearchOpen] = useState(false);
   const [productSearchQuery, setProductSearchQuery] = useState("");
@@ -89,12 +93,19 @@ export function OnlineProductForm({ onlineProduct, products, onSave, onCancel, o
       return;
     }
 
+    const shippingFeeNum = Number(shippingFee);
+    if (isNaN(shippingFeeNum) || shippingFeeNum < 0) {
+      toast.error("올바른 배송비를 입력해주세요.");
+      return;
+    }
+
     try {
       await onSave({
         product_id: selectedProduct.id,
         start_datetime: startDate.toISOString(),
         end_datetime: endDate.toISOString(),
         available_quantity: quantity,
+        shipping_fee: shippingFeeNum,
       });
     } catch (error) {
       console.error('Error saving online product:', error);
@@ -211,6 +222,19 @@ export function OnlineProductForm({ onlineProduct, products, onSave, onCancel, o
               value={availableQuantity}
               onChange={(e) => setAvailableQuantity(e.target.value)}
               placeholder="0"
+              min="0"
+              required
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="shipping_fee">배송비</Label>
+            <Input
+              id="shipping_fee"
+              type="number"
+              value={shippingFee}
+              onChange={(e) => setShippingFee(e.target.value)}
+              placeholder="4000"
               min="0"
               required
             />

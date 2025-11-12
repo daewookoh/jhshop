@@ -51,6 +51,7 @@ export function useOnlineProducts() {
     start_datetime: string;
     end_datetime: string;
     available_quantity: number;
+    shipping_fee: number;
   }) => {
     try {
       const { data: newItem, error } = await supabase
@@ -86,6 +87,7 @@ export function useOnlineProducts() {
       start_datetime: string;
       end_datetime: string;
       available_quantity: number;
+      shipping_fee: number;
     }
   ) => {
     try {

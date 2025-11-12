@@ -152,9 +152,14 @@ export function OnlineProductList({ onlineProducts, onEditProduct, canEdit, canD
                       </span>
                     </td>
                     <td className="p-4">
-                      <span className="font-bold text-primary">
-                        {onlineProduct.product.price.toLocaleString()}원
-                      </span>
+                      <div className="flex flex-col">
+                        <span className="font-bold text-primary">
+                          {onlineProduct.product.price.toLocaleString()}원
+                        </span>
+                        <span className="text-xs text-muted-foreground mt-1">
+                          배송비 {((onlineProduct as any).shipping_fee || 4000).toLocaleString()}원
+                        </span>
+                      </div>
                     </td>
                     <td className="p-4">
                       <div className="flex flex-col gap-1">
@@ -227,9 +232,14 @@ export function OnlineProductList({ onlineProducts, onEditProduct, canEdit, canD
                         <h3 className="font-medium text-foreground text-sm whitespace-pre-line">
                           {onlineProduct.product.name}
                         </h3>
-                        <p className="font-bold text-primary text-sm">
-                          {onlineProduct.product.price.toLocaleString()}원
-                        </p>
+                        <div className="flex flex-col">
+                          <p className="font-bold text-primary text-sm">
+                            {onlineProduct.product.price.toLocaleString()}원
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            배송비 {((onlineProduct as any).shipping_fee || 4000).toLocaleString()}원
+                          </p>
+                        </div>
                         <div className="text-xs text-muted-foreground mt-1">
                           <div>시작: {formatDateTime(onlineProduct.start_datetime)}</div>
                           <div>종료: {formatDateTime(onlineProduct.end_datetime)}</div>

@@ -107,6 +107,7 @@ export default function Home() {
     start_datetime: string;
     end_datetime: string;
     available_quantity: number;
+    shipping_fee: number;
   }) => {
     if (editingOnlineProduct) {
       const success = await updateOnlineProduct(editingOnlineProduct.id, data);

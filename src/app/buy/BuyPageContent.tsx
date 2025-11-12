@@ -542,7 +542,7 @@ export function BuyPageContent() {
   const calculateTotalPrice = (): number => {
     if (!onlineProduct) return 0;
     const productPrice = onlineProduct.product.price * quantity;
-    const shippingFee = 4000; // 배송비
+    const shippingFee = (onlineProduct as any).shipping_fee || 4000; // 배송비 (기본값 4000원)
     return productPrice + shippingFee;
   };
 
@@ -700,7 +700,7 @@ export function BuyPageContent() {
 
     setIsLoading(true);
     try {
-      const shippingFee = 4000; // 배송비
+      const shippingFee = (onlineProduct as any).shipping_fee || 4000; // 배송비 (기본값 4000원)
       
       // Create online_order
       const { error: onlineOrderError } = await supabase
@@ -1197,7 +1197,9 @@ export function BuyPageContent() {
                             </div>
                             <div className="flex items-center justify-between text-sm">
                               <span className="text-muted-foreground">배송비</span>
-                              <span className="font-medium">4,000원</span>
+                              <span className="font-medium">
+                                {((onlineProduct as any).shipping_fee || 4000).toLocaleString()}원
+                              </span>
                             </div>
                             <div className="flex items-center justify-between pt-2 border-t">
                               <span className="text-lg font-medium text-muted-foreground">총 결제금액</span>
