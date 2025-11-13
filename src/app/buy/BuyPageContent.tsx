@@ -59,6 +59,7 @@ export function BuyPageContent() {
   const [showOrderHistoryDialog, setShowOrderHistoryDialog] = useState(false);
   const [cancelOrderId, setCancelOrderId] = useState<number | null>(null);
   const [showCancelDialog, setShowCancelDialog] = useState(false);
+  const [showOrderCompleteDialog, setShowOrderCompleteDialog] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const nameInputRef = useRef<HTMLInputElement>(null);
 
@@ -95,46 +96,46 @@ export function BuyPageContent() {
   }, []);
 
   // Load online orders for logged in user
-  useEffect(() => {
-    const loadOnlineOrders = async () => {
-      if (!user || !user.mobile) return;
+  const loadOnlineOrders = async () => {
+    if (!user || !user.mobile) return;
 
-      setLoadingOrders(true);
-      try {
-        const { data, error } = await supabase
-          .from('online_orders')
-          .select(`
+    setLoadingOrders(true);
+    try {
+      const { data, error } = await supabase
+        .from('online_orders')
+        .select(`
+          *,
+          online_product:online_products(
             *,
-            online_product:online_products(
-              *,
-              product:products(*)
-            )
-          `)
-          .eq('mobile', user.mobile)
-          .order('created_at', { ascending: false });
+            product:products(*)
+          )
+        `)
+        .eq('mobile', user.mobile)
+        .order('created_at', { ascending: false });
 
-        if (error) {
-          console.error('Error loading online orders:', error);
-          return;
-        }
-
-        // Transform the data
-        const transformed = (data || []).map((item: any) => ({
-          ...item,
-          online_product: {
-            ...item.online_product,
-            product: item.online_product.product as Product,
-          } as OnlineProduct,
-        }));
-
-        setOnlineOrders(transformed);
-      } catch (error) {
+      if (error) {
         console.error('Error loading online orders:', error);
-      } finally {
-        setLoadingOrders(false);
+        return;
       }
-    };
 
+      // Transform the data
+      const transformed = (data || []).map((item: any) => ({
+        ...item,
+        online_product: {
+          ...item.online_product,
+          product: item.online_product.product as Product,
+        } as OnlineProduct,
+      }));
+
+      setOnlineOrders(transformed);
+    } catch (error) {
+      console.error('Error loading online orders:', error);
+    } finally {
+      setLoadingOrders(false);
+    }
+  };
+
+  useEffect(() => {
     loadOnlineOrders();
   }, [user]);
 
@@ -802,7 +803,7 @@ export function BuyPageContent() {
         // 이메일 발송 실패해도 주문은 완료된 것으로 처리
       }
 
-      toast.success('주문이 완료되었습니다.');
+      // Reset form
       setQuantity(1);
       setOrdererName("");
       setOrdererMobile("");
@@ -810,10 +811,7 @@ export function BuyPageContent() {
       setAddressDetail("");
       setPostcode("");
       
-      // Switch to orders tab
-      setActiveTab("orders");
-      
-      // Reload product and orders
+      // Reload product first
       if (productId) {
         const { data, error } = await supabase
           .from('online_products')
@@ -832,31 +830,15 @@ export function BuyPageContent() {
         }
       }
 
-      // Reload orders
-      if (user.mobile) {
-        const { data, error } = await supabase
-          .from('online_orders')
-          .select(`
-            *,
-            online_product:online_products(
-              *,
-              product:products(*)
-            )
-          `)
-          .eq('mobile', user.mobile)
-          .order('created_at', { ascending: false });
-
-        if (!error && data) {
-          const transformed = (data || []).map((item: any) => ({
-            ...item,
-            online_product: {
-              ...item.online_product,
-              product: item.online_product.product as Product,
-            } as OnlineProduct,
-          }));
-          setOnlineOrders(transformed);
-        }
-      }
+      // Reload orders from DB (wait a bit for DB to update)
+      await new Promise(resolve => setTimeout(resolve, 500)); // Wait 500ms for DB to update
+      await loadOnlineOrders();
+      
+      // Show order complete dialog
+      setShowOrderCompleteDialog(true);
+      
+      // Switch to orders tab after dialog is shown
+      setActiveTab("orders");
     } catch (error) {
       console.error('Order error:', error);
       toast.error('주문 중 오류가 발생했습니다.');
@@ -1442,6 +1424,31 @@ export function BuyPageContent() {
                   className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                 >
                   예
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+
+          {/* Order Complete Dialog */}
+          <AlertDialog open={showOrderCompleteDialog} onOpenChange={setShowOrderCompleteDialog}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle className="flex items-center gap-2">
+                  <ShoppingCart className="h-5 w-5 text-primary" />
+                  주문이 완료되었습니다
+                </AlertDialogTitle>
+                <AlertDialogDescription className="text-base">
+                  주문이 성공적으로 접수되었습니다.
+                  <br />
+                  입금 계좌 정보를 확인하시고 입금해주세요.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogAction
+                  onClick={() => setShowOrderCompleteDialog(false)}
+                  className="w-full"
+                >
+                  확인
                 </AlertDialogAction>
               </AlertDialogFooter>
             </AlertDialogContent>
