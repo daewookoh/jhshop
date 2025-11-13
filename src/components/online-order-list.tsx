@@ -19,7 +19,7 @@ type OnlineOrder = {
   online_product_id: number;
   quantity: number;
   total_price: number;
-  payment_status: '입금대기' | '입금완료' | '주문취소';
+  payment_status: '입금대기' | '입금완료' | '주문취소' | '발송완료';
   name: string;
   mobile: string;
   orderer_mobile: string;
@@ -45,7 +45,7 @@ export function OnlineOrderList() {
   const [editForm, setEditForm] = useState({
     quantity: 1,
     total_price: 0,
-    payment_status: '입금대기' as '입금대기' | '입금완료' | '주문취소',
+    payment_status: '입금대기' as '입금대기' | '입금완료' | '주문취소' | '발송완료',
     name: '',
     mobile: '',
     address: '',
@@ -108,7 +108,7 @@ export function OnlineOrderList() {
     }
   };
 
-  const handleStatusChange = async (orderId: number, newStatus: '입금대기' | '입금완료' | '주문취소') => {
+  const handleStatusChange = async (orderId: number, newStatus: '입금대기' | '입금완료' | '주문취소' | '발송완료') => {
     setUpdatingStatus(orderId);
     try {
       const { error } = await supabase
@@ -386,6 +386,7 @@ export function OnlineOrderList() {
           filteredOrders.map((order) => {
             const isCancelled = (order.payment_status as string) === '주문취소';
             const isPaid = order.payment_status === '입금완료';
+            const isShipped = order.payment_status === '발송완료';
             
             return (
               <Card 
@@ -395,6 +396,8 @@ export function OnlineOrderList() {
                     ? 'bg-red-50 dark:bg-red-950/20 border-red-200 dark:border-red-900'
                     : isPaid
                     ? 'bg-green-50 border-green-200 dark:bg-green-950 dark:border-green-800'
+                    : isShipped
+                    ? 'bg-blue-50 border-blue-200 dark:bg-blue-950 dark:border-blue-800'
                     : 'bg-gradient-card'
                 }`}
               >
@@ -413,7 +416,7 @@ export function OnlineOrderList() {
                       </Button>
                       <Select
                         value={order.payment_status}
-                        onValueChange={(value: '입금대기' | '입금완료' | '주문취소') => handleStatusChange(order.id, value)}
+                        onValueChange={(value: '입금대기' | '입금완료' | '주문취소' | '발송완료') => handleStatusChange(order.id, value)}
                         disabled={updatingStatus === order.id}
                       >
                         <SelectTrigger className="w-[100px]">
@@ -422,6 +425,7 @@ export function OnlineOrderList() {
                         <SelectContent>
                           <SelectItem value="입금대기">입금대기</SelectItem>
                           <SelectItem value="입금완료">입금완료</SelectItem>
+                          <SelectItem value="발송완료">발송완료</SelectItem>
                           <SelectItem value="주문취소">주문취소</SelectItem>
                         </SelectContent>
                       </Select>
@@ -495,6 +499,7 @@ export function OnlineOrderList() {
                   const saleStatus = getSaleStatus(order);
                   const isCancelled = (order.payment_status as string) === '주문취소';
                   const isPaid = order.payment_status === '입금완료';
+                  const isShipped = order.payment_status === '발송완료';
                   
                   return (
                     <tr 
@@ -504,6 +509,8 @@ export function OnlineOrderList() {
                           ? 'bg-red-50 dark:bg-red-950/20 hover:bg-red-100 dark:hover:bg-red-900/30 border-red-200 dark:border-red-900'
                           : isPaid
                           ? 'bg-green-50 dark:bg-green-950 hover:bg-green-100 dark:hover:bg-green-900 border-green-200 dark:border-green-800'
+                          : isShipped
+                          ? 'bg-blue-50 dark:bg-blue-950 hover:bg-blue-100 dark:hover:bg-blue-900 border-blue-200 dark:border-blue-800'
                           : 'hover:bg-muted/50'
                       }`}
                     >
@@ -531,7 +538,7 @@ export function OnlineOrderList() {
                       <td className="p-4 text-center text-sm">
                         <Select
                           value={order.payment_status}
-                          onValueChange={(value: '입금대기' | '입금완료' | '주문취소') => handleStatusChange(order.id, value)}
+                          onValueChange={(value: '입금대기' | '입금완료' | '주문취소' | '발송완료') => handleStatusChange(order.id, value)}
                           disabled={updatingStatus === order.id}
                         >
                           <SelectTrigger className="w-[100px]">
@@ -540,6 +547,7 @@ export function OnlineOrderList() {
                           <SelectContent>
                             <SelectItem value="입금대기">입금대기</SelectItem>
                             <SelectItem value="입금완료">입금완료</SelectItem>
+                            <SelectItem value="발송완료">발송완료</SelectItem>
                             <SelectItem value="주문취소">주문취소</SelectItem>
                           </SelectContent>
                         </Select>
@@ -617,7 +625,7 @@ export function OnlineOrderList() {
                 <Label htmlFor="edit-payment-status">입금상태</Label>
                 <Select
                   value={editForm.payment_status}
-                  onValueChange={(value: '입금대기' | '입금완료' | '주문취소') => setEditForm(prev => ({ ...prev, payment_status: value }))}
+                  onValueChange={(value: '입금대기' | '입금완료' | '주문취소' | '발송완료') => setEditForm(prev => ({ ...prev, payment_status: value }))}
                 >
                   <SelectTrigger>
                     <SelectValue />
@@ -625,6 +633,7 @@ export function OnlineOrderList() {
                   <SelectContent>
                     <SelectItem value="입금대기">입금대기</SelectItem>
                     <SelectItem value="입금완료">입금완료</SelectItem>
+                    <SelectItem value="발송완료">발송완료</SelectItem>
                     <SelectItem value="주문취소">주문취소</SelectItem>
                   </SelectContent>
                 </Select>
