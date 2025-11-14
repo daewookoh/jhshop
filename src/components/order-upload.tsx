@@ -468,8 +468,17 @@ export function OrderUpload() {
     setCurrentStep("구글시트 작성 중...");
 
     try {
-      // 주문 데이터를 닉네임별로 그룹화
-      const groupedByNickname = finalOrders.reduce((acc, order) => {
+      // 원본주문내역을 닉네임별로 그룹화 (시트만 작성과 동일한 방식)
+      const groupedByNickname = parsedOrders.reduce((acc, order) => {
+        if (!acc[order.nickname]) {
+          acc[order.nickname] = [];
+        }
+        acc[order.nickname].push(order);
+        return acc;
+      }, {} as Record<string, ParsedOrder[]>);
+
+      // 최종주문목록을 닉네임별로 그룹화
+      const finalOrdersByNickname = finalOrders.reduce((acc, order) => {
         if (!acc[order.nickname]) {
           acc[order.nickname] = [];
         }
@@ -477,24 +486,26 @@ export function OrderUpload() {
         return acc;
       }, {} as Record<string, FinalOrderItem[]>);
 
-      // API로 전송할 데이터 준비
-      const orderData = Object.entries(groupedByNickname).map(([nickname, orders]) => {
-        // 원본 주문 데이터에서 orderText 가져오기
-        const originalOrders = parsedOrders.filter(p => p.nickname === nickname);
-        const orderTexts = originalOrders.map(order => order.orderText).filter(text => text.trim() !== '');
-        
-        return {
+      // API로 전송할 데이터 준비 (최종주문목록이 있는 닉네임만 필터링)
+      const orderData = Object.entries(groupedByNickname)
+        .filter(([nickname]) => {
+          // 최종주문목록에 해당 닉네임의 데이터가 있고, 실제 상품이 있는지 확인
+          const hasFinalOrders = finalOrdersByNickname[nickname] &&
+                                finalOrdersByNickname[nickname].length > 0 &&
+                                finalOrdersByNickname[nickname].some(order => order.quantity > 0);
+          return hasFinalOrders;
+        })
+        .map(([nickname, orders]) => ({
           nickname,
-          orderText: orderTexts.join('\n'),
+          orderText: orders.map(order => order.orderText).join('\n'),
           notes: orderNotes[nickname] || '',
-          products: orders.map(order => ({
+          products: finalOrdersByNickname[nickname] ? finalOrdersByNickname[nickname].map(order => ({
             name: order.productName,
             quantity: order.quantity,
             price: order.price,
             total: order.total
-          }))
-        };
-      });
+          })) : []
+        }));
 
       const formData = new FormData();
       formData.append('excelFile', file);
