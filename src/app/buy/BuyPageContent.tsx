@@ -61,10 +61,6 @@ export function BuyPageContent() {
   const [cancelOrderId, setCancelOrderId] = useState<number | null>(null);
   const [showCancelDialog, setShowCancelDialog] = useState(false);
   const [showOrderCompleteDialog, setShowOrderCompleteDialog] = useState(false);
-  const [matchedProducts, setMatchedProducts] = useState<OnlineProduct[]>([]);
-  const [showNotAvailableDialog, setShowNotAvailableDialog] = useState(false);
-  const [notAvailableKeyword, setNotAvailableKeyword] = useState("");
-  const [showProductSelectionDialog, setShowProductSelectionDialog] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const nameInputRef = useRef<HTMLInputElement>(null);
 
@@ -200,7 +196,7 @@ export function BuyPageContent() {
   // Load all online products if no id is provided
   useEffect(() => {
     const loadAllOnlineProducts = async () => {
-      if (productId || keyword) return;
+      if (productId) return;
 
       setLoadingProducts(true);
       try {
@@ -231,123 +227,40 @@ export function BuyPageContent() {
     };
 
     loadAllOnlineProducts();
-  }, [productId, keyword]);
+  }, [productId]);
 
-  // Search products by keyword
+  // Handle keyword search - 상품 로드 후 필터링 및 리다이렉트
   useEffect(() => {
-    const searchProductsByKeyword = async () => {
-      if (!keyword || productId) return;
+    if (!keyword || productId || loadingProducts || onlineProducts.length === 0) return;
 
-      setLoadingProducts(true);
-      try {
-        // 먼저 products 테이블에서 키워드로 검색 (활성화된 상품만)
-        const { data: matchedProductsData, error: productsError } = await supabase
-          .from('products')
-          .select('id, name, is_active')
-          .ilike('name', `%${keyword}%`)
-          .eq('is_active', true);
+    // 판매 가능한 상품만 먼저 필터링
+    const now = new Date();
+    const availableProducts = getFilteredAndSortedProducts().filter((product) => {
+      const startDate = new Date(product.start_datetime);
+      const endDate = new Date(product.end_datetime);
+      return now >= startDate && now <= endDate;
+    });
 
-        console.log('🔍 Keyword search:', keyword);
-        console.log('📦 Found products:', matchedProductsData);
+    // 키워드로 상품명 필터링
+    const matchedProducts = availableProducts.filter((product) =>
+      product.product.name.toLowerCase().includes(keyword.toLowerCase())
+    );
 
-        if (productsError) {
-          console.error('❌ Error searching products:', productsError);
-          setLoadingProducts(false);
-          return;
-        }
+    // 검색 결과가 없으면 alert 후 /buy로 이동
+    if (matchedProducts.length === 0) {
+      alert(`[${keyword}] 상품은 현재 판매중이 아닙니다.`);
+      window.location.href = '/buy';
+      return;
+    }
 
-        // 검색된 상품이 없는 경우
-        if (!matchedProductsData || matchedProductsData.length === 0) {
-          console.log('❌ No products found for keyword:', keyword);
-          setNotAvailableKeyword(keyword);
-          setShowNotAvailableDialog(true);
-          setMatchedProducts([]);
-          setLoadingProducts(false);
-          return;
-        }
+    // 검색 결과가 1개면 해당 상품 페이지로 이동
+    if (matchedProducts.length === 1) {
+      window.location.href = `/buy?id=${matchedProducts[0].id}`;
+      return;
+    }
 
-        // 검색된 product_id들 추출
-        const productIds = matchedProductsData.map(p => p.id);
-        console.log('🔑 Product IDs:', productIds);
-
-        // online_products에서 해당 상품들 가져오기
-        const { data: onlineProductsData, error: onlineError } = await supabase
-          .from('online_products')
-          .select(`
-            *,
-            product:products(*)
-          `)
-          .in('product_id', productIds)
-          .order('created_at', { ascending: false });
-
-        console.log('🛒 Online products:', onlineProductsData);
-
-        if (onlineError) {
-          console.error('❌ Error fetching online products:', onlineError);
-          setLoadingProducts(false);
-          return;
-        }
-
-        const transformed = (onlineProductsData || []).map((item: any) => ({
-          ...item,
-          product: item.product as Product,
-        })) as OnlineProduct[];
-
-        // 검색 결과가 없는 경우
-        if (transformed.length === 0) {
-          console.log('❌ No online products found');
-          setNotAvailableKeyword(keyword);
-          setShowNotAvailableDialog(true);
-          setMatchedProducts([]);
-          setLoadingProducts(false);
-          return;
-        }
-
-        // 판매 가능한 상품만 필터링
-        const now = new Date();
-        const availableProducts = transformed.filter((product) => {
-          const startDate = new Date(product.start_datetime);
-          const endDate = new Date(product.end_datetime);
-          const isAvailable = now >= startDate && now <= endDate;
-          console.log(`📅 Product ${product.product.name}:`, {
-            start: startDate.toISOString(),
-            end: endDate.toISOString(),
-            now: now.toISOString(),
-            isAvailable
-          });
-          return isAvailable;
-        });
-
-        console.log('✅ Available products:', availableProducts.length);
-
-        // 판매 가능한 상품이 없는 경우
-        if (availableProducts.length === 0) {
-          console.log('❌ No products currently available for sale');
-          setNotAvailableKeyword(keyword);
-          setShowNotAvailableDialog(true);
-          setMatchedProducts([]);
-          setLoadingProducts(false);
-          return;
-        }
-
-        // 판매 가능한 상품이 1개인 경우 - 해당 상품 페이지로 리다이렉트
-        if (availableProducts.length === 1) {
-          window.location.href = `/buy?id=${availableProducts[0].id}`;
-          return;
-        }
-
-        // 여러 개인 경우 - 상품 선택 화면
-        setMatchedProducts(availableProducts);
-        setShowProductSelectionDialog(true);
-      } catch (error) {
-        console.error('Error searching products:', error);
-      } finally {
-        setLoadingProducts(false);
-      }
-    };
-
-    searchProductsByKeyword();
-  }, [keyword, productId]);
+    // 검색 결과가 여러 개면 그냥 표시 (기존 상품 목록에서 필터링됨)
+  }, [keyword, productId, loadingProducts, onlineProducts]);
 
   // Auto focus input when component mounts
   useEffect(() => {
@@ -730,11 +643,19 @@ export function BuyPageContent() {
     const now = new Date();
     const twelveHoursAgo = new Date(now.getTime() - 12 * 60 * 60 * 1000);
 
+    // keyword가 있으면 먼저 필터링
+    let products = onlineProducts;
+    if (keyword) {
+      products = onlineProducts.filter((product) =>
+        product.product.name.toLowerCase().includes(keyword.toLowerCase())
+      );
+    }
+
     // Categorize products
     const availableProducts: OnlineProduct[] = [];
     const endedProducts: OnlineProduct[] = [];
 
-    onlineProducts.forEach((product) => {
+    products.forEach((product) => {
       const startDate = new Date(product.start_datetime);
       const endDate = new Date(product.end_datetime);
       const isInSalePeriod = now >= startDate && now <= endDate;
@@ -1654,6 +1575,7 @@ export function BuyPageContent() {
     );
   }
 
+
   // Show loading screen while checking auth status (to prevent flash of login screen)
   if (checkingAuth) {
     return (
@@ -1723,77 +1645,6 @@ export function BuyPageContent() {
           </DialogContent>
         </Dialog>
 
-        {/* Not Available Dialog */}
-        <AlertDialog open={showNotAvailableDialog} onOpenChange={setShowNotAvailableDialog}>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle className="flex items-center gap-2">
-                <AlertCircle className="h-5 w-5 text-destructive" />
-                상품을 찾을 수 없습니다
-              </AlertDialogTitle>
-              <AlertDialogDescription>
-                [{notAvailableKeyword}] 상품은 현재 판매중이 아닙니다.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogAction
-                onClick={() => {
-                  setShowNotAvailableDialog(false);
-                  window.location.href = '/buy';
-                }}
-              >
-                확인
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-
-        {/* Product Selection Dialog */}
-        <Dialog open={showProductSelectionDialog} onOpenChange={setShowProductSelectionDialog}>
-          <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle>상품 선택</DialogTitle>
-            </DialogHeader>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-4">
-              {matchedProducts.map((product) => (
-                <Card
-                  key={product.id}
-                  className="bg-gradient-card shadow-medium cursor-pointer transition-all hover:shadow-lg"
-                  onClick={() => {
-                    window.location.href = `/buy?id=${product.id}`;
-                  }}
-                >
-                  <div className="relative">
-                    {product.product.image_url ? (
-                      <div className="aspect-square w-full overflow-hidden rounded-t-lg">
-                        <img
-                          src={product.product.image_url}
-                          alt={cleanProductName(product.product.name)}
-                          className="w-full h-full object-cover"
-                        />
-                      </div>
-                    ) : (
-                      <div className="aspect-square w-full bg-muted flex items-center justify-center rounded-t-lg">
-                        <Package className="h-16 w-16 text-muted-foreground" />
-                      </div>
-                    )}
-                  </div>
-                  <CardContent className="p-4">
-                    <h3 className="text-lg font-bold text-foreground mb-2 line-clamp-2">
-                      {cleanProductName(product.product.name)}
-                    </h3>
-                    <p className="text-2xl font-bold text-primary">
-                      {product.product.price.toLocaleString()}원
-                    </p>
-                    <div className="mt-2">
-                      <Badge variant="default">판매중</Badge>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          </DialogContent>
-        </Dialog>
     </div>
   );
 }
