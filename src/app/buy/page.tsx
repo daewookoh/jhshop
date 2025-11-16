@@ -4,21 +4,86 @@ import { BuyPageContent } from './BuyPageContent';
 import { supabaseServer } from '@/integrations/supabase/server';
 
 type Props = {
-  searchParams: Promise<{ id?: string }>;
+  searchParams: Promise<{ id?: string; keyword?: string }>;
 };
 
-// Generate metadata dynamically based on product ID
+// Generate metadata dynamically based on product ID or keyword
 export async function generateMetadata({ searchParams }: Props): Promise<Metadata> {
   const resolvedSearchParams = await searchParams;
   const productId = resolvedSearchParams?.id;
+  const keyword = resolvedSearchParams?.keyword;
+  const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://jhshop.vercel.app';
 
-  // If no product ID, return default metadata
+  // If keyword is provided, search for products
+  if (keyword && !productId) {
+    const { data: products } = await supabaseServer
+      .from('online_products')
+      .select(`
+        id,
+        product:products(name, price, image_url)
+      `)
+      .ilike('products.name', `%${keyword}%`)
+      .limit(1)
+      .single();
+
+    if (products) {
+      const product = products.product as any;
+      const productName = product?.name || keyword;
+      const productPrice = product?.price || 0;
+      const productImage = product?.image_url;
+      const productUrl = `${baseUrl}/buy?keyword=${encodeURIComponent(keyword)}`;
+
+      let imageUrl = productImage;
+      if (productImage && !productImage.startsWith('http')) {
+        if (productImage.startsWith('/')) {
+          imageUrl = `${baseUrl}${productImage}`;
+        }
+      }
+
+      return {
+        title: `${productName} | 과실당`,
+        description: `${productName} - ${productPrice.toLocaleString()}원 | 과실당에서 구매하세요`,
+        alternates: {
+          canonical: productUrl,
+        },
+        openGraph: {
+          title: productName,
+          description: `${productPrice.toLocaleString()}원`,
+          type: 'website',
+          url: productUrl,
+          images: productImage ? [
+            {
+              url: imageUrl,
+              width: 1200,
+              height: 630,
+              alt: productName,
+            }
+          ] : [],
+        },
+        twitter: {
+          card: 'summary_large_image',
+          title: productName,
+          description: `${productPrice.toLocaleString()}원`,
+          images: productImage ? [imageUrl] : [],
+        },
+        other: {
+          'og:image:width': '1200',
+          'og:image:height': '630',
+          'og:image:type': 'image/jpeg',
+        },
+      };
+    }
+  }
+
+  // If no product ID or keyword, return default metadata
   if (!productId) {
-    const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://jhshop.vercel.app';
     const ogImageUrl = `${baseUrl}/og.png`;
     return {
       title: '과실당 온라인',
       description: '엄선된 상품을 온라인에서 주문하세요',
+      alternates: {
+        canonical: `${baseUrl}/buy`,
+      },
       openGraph: {
         title: '과실당 온라인',
         description: '엄선된 상품을 온라인에서 주문하세요',
@@ -90,6 +155,9 @@ export async function generateMetadata({ searchParams }: Props): Promise<Metadat
     return {
       title: `${productName} | 과실당`,
       description: `${productName} - ${productPrice.toLocaleString()}원 | 과실당에서 구매하세요`,
+      alternates: {
+        canonical: productUrl,
+      },
       openGraph: {
         title: productName,
         description: `${productPrice.toLocaleString()}원`,
@@ -127,17 +195,84 @@ export async function generateMetadata({ searchParams }: Props): Promise<Metadat
 }
 
 export default async function BuyPage(props: Props) {
-  // searchParams is already handled in generateMetadata and BuyPageContent
+  const resolvedSearchParams = await props.searchParams;
+  const productId = resolvedSearchParams?.id;
+  let jsonLd = null;
+
+  // Generate JSON-LD structured data for product
+  if (productId) {
+    try {
+      const { data } = await supabaseServer
+        .from('online_products')
+        .select(`
+          *,
+          product:products(*)
+        `)
+        .eq('id', parseInt(productId))
+        .single();
+
+      if (data) {
+        const product = data.product as any;
+        const now = new Date();
+        const start = new Date(data.start_datetime);
+        const end = new Date(data.end_datetime);
+
+        // Determine availability
+        let availability = 'https://schema.org/OutOfStock';
+        if (now >= start && now <= end && data.available_quantity > 0) {
+          availability = 'https://schema.org/InStock';
+        } else if (now < start) {
+          availability = 'https://schema.org/PreOrder';
+        }
+
+        const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://jhshop.vercel.app';
+        const productUrl = `${baseUrl}/buy?id=${productId}`;
+
+        jsonLd = {
+          '@context': 'https://schema.org',
+          '@type': 'Product',
+          name: product?.name,
+          description: product?.name,
+          image: product?.image_url,
+          url: productUrl,
+          offers: {
+            '@type': 'Offer',
+            url: productUrl,
+            priceCurrency: 'KRW',
+            price: product?.price,
+            availability: availability,
+            validFrom: data.start_datetime,
+            validThrough: data.end_datetime,
+            seller: {
+              '@type': 'Organization',
+              name: '과실당',
+            },
+          },
+        };
+      }
+    } catch (error) {
+      console.error('Error generating JSON-LD:', error);
+    }
+  }
+
   return (
-    <Suspense fallback={
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
-          <p className="text-muted-foreground">로딩 중...</p>
+    <>
+      {jsonLd && (
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+        />
+      )}
+      <Suspense fallback={
+        <div className="min-h-screen bg-background flex items-center justify-center">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
+            <p className="text-muted-foreground">로딩 중...</p>
+          </div>
         </div>
-      </div>
-    }>
-      <BuyPageContent />
-    </Suspense>
+      }>
+        <BuyPageContent />
+      </Suspense>
+    </>
   );
 }

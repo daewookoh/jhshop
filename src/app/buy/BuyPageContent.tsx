@@ -30,7 +30,8 @@ type OnlineOrder = Tables<'online_orders'> & {
 export function BuyPageContent() {
   const searchParams = useSearchParams();
   const productId = searchParams?.get('id') || null;
-  
+  const keyword = searchParams?.get('keyword') || null;
+
   const [mobile, setMobile] = useState("");
   const [name, setName] = useState("");
   const [quantity, setQuantity] = useState(1);
@@ -60,6 +61,10 @@ export function BuyPageContent() {
   const [cancelOrderId, setCancelOrderId] = useState<number | null>(null);
   const [showCancelDialog, setShowCancelDialog] = useState(false);
   const [showOrderCompleteDialog, setShowOrderCompleteDialog] = useState(false);
+  const [matchedProducts, setMatchedProducts] = useState<OnlineProduct[]>([]);
+  const [showNotAvailableDialog, setShowNotAvailableDialog] = useState(false);
+  const [notAvailableKeyword, setNotAvailableKeyword] = useState("");
+  const [showProductSelectionDialog, setShowProductSelectionDialog] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const nameInputRef = useRef<HTMLInputElement>(null);
 
@@ -195,8 +200,8 @@ export function BuyPageContent() {
   // Load all online products if no id is provided
   useEffect(() => {
     const loadAllOnlineProducts = async () => {
-      if (productId) return;
-      
+      if (productId || keyword) return;
+
       setLoadingProducts(true);
       try {
         const { data, error } = await supabase
@@ -226,7 +231,76 @@ export function BuyPageContent() {
     };
 
     loadAllOnlineProducts();
-  }, [productId]);
+  }, [productId, keyword]);
+
+  // Search products by keyword
+  useEffect(() => {
+    const searchProductsByKeyword = async () => {
+      if (!keyword || productId) return;
+
+      setLoadingProducts(true);
+      try {
+        const { data, error } = await supabase
+          .from('online_products')
+          .select(`
+            *,
+            product:products(*)
+          `)
+          .ilike('products.name', `%${keyword}%`)
+          .order('created_at', { ascending: false });
+
+        if (error) {
+          console.error('Error searching products:', error);
+          return;
+        }
+
+        const transformed = (data || []).map((item: any) => ({
+          ...item,
+          product: item.product as Product,
+        })) as OnlineProduct[];
+
+        // 검색 결과가 없는 경우
+        if (transformed.length === 0) {
+          setNotAvailableKeyword(keyword);
+          setShowNotAvailableDialog(true);
+          setMatchedProducts([]);
+          return;
+        }
+
+        // 판매 가능한 상품만 필터링
+        const now = new Date();
+        const availableProducts = transformed.filter((product) => {
+          const startDate = new Date(product.start_datetime);
+          const endDate = new Date(product.end_datetime);
+          return now >= startDate && now <= endDate;
+        });
+
+        // 판매 가능한 상품이 없는 경우
+        if (availableProducts.length === 0) {
+          setNotAvailableKeyword(keyword);
+          setShowNotAvailableDialog(true);
+          setMatchedProducts([]);
+          return;
+        }
+
+        // 판매 가능한 상품이 1개인 경우 - 해당 상품 페이지로 리다이렉트
+        if (availableProducts.length === 1) {
+          window.location.href = `/buy?id=${availableProducts[0].id}`;
+          return;
+        }
+
+        // 여러 개인 경우 - 상품 선택 화면
+        setMatchedProducts(availableProducts);
+        setShowProductSelectionDialog(true);
+      } catch (error) {
+        console.error('Error searching products:', error);
+      } finally {
+        setLoadingProducts(false);
+      }
+    };
+
+    searchProductsByKeyword();
+  }, [keyword, productId]);
 
   // Auto focus input when component mounts
   useEffect(() => {
@@ -1599,6 +1673,78 @@ export function BuyPageContent() {
               onComplete={handleAddressComplete}
               style={{ height: '600px' }}
             />
+          </DialogContent>
+        </Dialog>
+
+        {/* Not Available Dialog */}
+        <AlertDialog open={showNotAvailableDialog} onOpenChange={setShowNotAvailableDialog}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle className="flex items-center gap-2">
+                <AlertCircle className="h-5 w-5 text-destructive" />
+                상품을 찾을 수 없습니다
+              </AlertDialogTitle>
+              <AlertDialogDescription>
+                [{notAvailableKeyword}] 상품은 현재 판매중이 아닙니다.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogAction
+                onClick={() => {
+                  setShowNotAvailableDialog(false);
+                  window.location.href = '/buy';
+                }}
+              >
+                확인
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        {/* Product Selection Dialog */}
+        <Dialog open={showProductSelectionDialog} onOpenChange={setShowProductSelectionDialog}>
+          <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>상품 선택</DialogTitle>
+            </DialogHeader>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-4">
+              {matchedProducts.map((product) => (
+                <Card
+                  key={product.id}
+                  className="bg-gradient-card shadow-medium cursor-pointer transition-all hover:shadow-lg"
+                  onClick={() => {
+                    window.location.href = `/buy?id=${product.id}`;
+                  }}
+                >
+                  <div className="relative">
+                    {product.product.image_url ? (
+                      <div className="aspect-square w-full overflow-hidden rounded-t-lg">
+                        <img
+                          src={product.product.image_url}
+                          alt={cleanProductName(product.product.name)}
+                          className="w-full h-full object-cover"
+                        />
+                      </div>
+                    ) : (
+                      <div className="aspect-square w-full bg-muted flex items-center justify-center rounded-t-lg">
+                        <Package className="h-16 w-16 text-muted-foreground" />
+                      </div>
+                    )}
+                  </div>
+                  <CardContent className="p-4">
+                    <h3 className="text-lg font-bold text-foreground mb-2 line-clamp-2">
+                      {cleanProductName(product.product.name)}
+                    </h3>
+                    <p className="text-2xl font-bold text-primary">
+                      {product.product.price.toLocaleString()}원
+                    </p>
+                    <div className="mt-2">
+                      <Badge variant="default">판매중</Badge>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
           </DialogContent>
         </Dialog>
     </div>
