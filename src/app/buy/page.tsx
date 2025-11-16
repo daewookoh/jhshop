@@ -17,11 +17,12 @@ export async function generateMetadata({ searchParams }: Props): Promise<Metadat
   // If keyword is provided, search for products
   if (keyword && !productId) {
     try {
-      // 먼저 products 테이블에서 키워드 검색
+      // 먼저 products 테이블에서 키워드 검색 (활성화된 상품만)
       const { data: matchedProducts } = await supabaseServer
         .from('products')
         .select('id, name, price, image_url')
         .ilike('name', `%${keyword}%`)
+        .eq('is_active', true)
         .limit(1)
         .single();
 

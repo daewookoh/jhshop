@@ -240,20 +240,25 @@ export function BuyPageContent() {
 
       setLoadingProducts(true);
       try {
-        // 먼저 products 테이블에서 키워드로 검색
+        // 먼저 products 테이블에서 키워드로 검색 (활성화된 상품만)
         const { data: matchedProductsData, error: productsError } = await supabase
           .from('products')
-          .select('id')
-          .ilike('name', `%${keyword}%`);
+          .select('id, name, is_active')
+          .ilike('name', `%${keyword}%`)
+          .eq('is_active', true);
+
+        console.log('🔍 Keyword search:', keyword);
+        console.log('📦 Found products:', matchedProductsData);
 
         if (productsError) {
-          console.error('Error searching products:', productsError);
+          console.error('❌ Error searching products:', productsError);
           setLoadingProducts(false);
           return;
         }
 
         // 검색된 상품이 없는 경우
         if (!matchedProductsData || matchedProductsData.length === 0) {
+          console.log('❌ No products found for keyword:', keyword);
           setNotAvailableKeyword(keyword);
           setShowNotAvailableDialog(true);
           setMatchedProducts([]);
@@ -263,6 +268,7 @@ export function BuyPageContent() {
 
         // 검색된 product_id들 추출
         const productIds = matchedProductsData.map(p => p.id);
+        console.log('🔑 Product IDs:', productIds);
 
         // online_products에서 해당 상품들 가져오기
         const { data: onlineProductsData, error: onlineError } = await supabase
@@ -274,8 +280,10 @@ export function BuyPageContent() {
           .in('product_id', productIds)
           .order('created_at', { ascending: false });
 
+        console.log('🛒 Online products:', onlineProductsData);
+
         if (onlineError) {
-          console.error('Error fetching online products:', onlineError);
+          console.error('❌ Error fetching online products:', onlineError);
           setLoadingProducts(false);
           return;
         }
@@ -287,6 +295,7 @@ export function BuyPageContent() {
 
         // 검색 결과가 없는 경우
         if (transformed.length === 0) {
+          console.log('❌ No online products found');
           setNotAvailableKeyword(keyword);
           setShowNotAvailableDialog(true);
           setMatchedProducts([]);
@@ -299,11 +308,21 @@ export function BuyPageContent() {
         const availableProducts = transformed.filter((product) => {
           const startDate = new Date(product.start_datetime);
           const endDate = new Date(product.end_datetime);
-          return now >= startDate && now <= endDate;
+          const isAvailable = now >= startDate && now <= endDate;
+          console.log(`📅 Product ${product.product.name}:`, {
+            start: startDate.toISOString(),
+            end: endDate.toISOString(),
+            now: now.toISOString(),
+            isAvailable
+          });
+          return isAvailable;
         });
+
+        console.log('✅ Available products:', availableProducts.length);
 
         // 판매 가능한 상품이 없는 경우
         if (availableProducts.length === 0) {
+          console.log('❌ No products currently available for sale');
           setNotAvailableKeyword(keyword);
           setShowNotAvailableDialog(true);
           setMatchedProducts([]);
