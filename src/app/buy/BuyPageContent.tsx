@@ -240,21 +240,47 @@ export function BuyPageContent() {
 
       setLoadingProducts(true);
       try {
-        const { data, error } = await supabase
+        // 먼저 products 테이블에서 키워드로 검색
+        const { data: matchedProductsData, error: productsError } = await supabase
+          .from('products')
+          .select('id')
+          .ilike('name', `%${keyword}%`);
+
+        if (productsError) {
+          console.error('Error searching products:', productsError);
+          setLoadingProducts(false);
+          return;
+        }
+
+        // 검색된 상품이 없는 경우
+        if (!matchedProductsData || matchedProductsData.length === 0) {
+          setNotAvailableKeyword(keyword);
+          setShowNotAvailableDialog(true);
+          setMatchedProducts([]);
+          setLoadingProducts(false);
+          return;
+        }
+
+        // 검색된 product_id들 추출
+        const productIds = matchedProductsData.map(p => p.id);
+
+        // online_products에서 해당 상품들 가져오기
+        const { data: onlineProductsData, error: onlineError } = await supabase
           .from('online_products')
           .select(`
             *,
             product:products(*)
           `)
-          .ilike('products.name', `%${keyword}%`)
+          .in('product_id', productIds)
           .order('created_at', { ascending: false });
 
-        if (error) {
-          console.error('Error searching products:', error);
+        if (onlineError) {
+          console.error('Error fetching online products:', onlineError);
+          setLoadingProducts(false);
           return;
         }
 
-        const transformed = (data || []).map((item: any) => ({
+        const transformed = (onlineProductsData || []).map((item: any) => ({
           ...item,
           product: item.product as Product,
         })) as OnlineProduct[];
@@ -264,6 +290,7 @@ export function BuyPageContent() {
           setNotAvailableKeyword(keyword);
           setShowNotAvailableDialog(true);
           setMatchedProducts([]);
+          setLoadingProducts(false);
           return;
         }
 
@@ -280,6 +307,7 @@ export function BuyPageContent() {
           setNotAvailableKeyword(keyword);
           setShowNotAvailableDialog(true);
           setMatchedProducts([]);
+          setLoadingProducts(false);
           return;
         }
 

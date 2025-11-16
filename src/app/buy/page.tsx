@@ -16,62 +16,64 @@ export async function generateMetadata({ searchParams }: Props): Promise<Metadat
 
   // If keyword is provided, search for products
   if (keyword && !productId) {
-    const { data: products } = await supabaseServer
-      .from('online_products')
-      .select(`
-        id,
-        product:products(name, price, image_url)
-      `)
-      .ilike('products.name', `%${keyword}%`)
-      .limit(1)
-      .single();
+    try {
+      // 먼저 products 테이블에서 키워드 검색
+      const { data: matchedProducts } = await supabaseServer
+        .from('products')
+        .select('id, name, price, image_url')
+        .ilike('name', `%${keyword}%`)
+        .limit(1)
+        .single();
 
-    if (products) {
-      const product = products.product as any;
-      const productName = product?.name || keyword;
-      const productPrice = product?.price || 0;
-      const productImage = product?.image_url;
-      const productUrl = `${baseUrl}/buy?keyword=${encodeURIComponent(keyword)}`;
+      if (matchedProducts) {
+        const product = matchedProducts;
+        const productName = product?.name || keyword;
+        const productPrice = product?.price || 0;
+        const productImage = product?.image_url;
+        const productUrl = `${baseUrl}/buy?keyword=${encodeURIComponent(keyword)}`;
 
-      let imageUrl = productImage;
-      if (productImage && !productImage.startsWith('http')) {
-        if (productImage.startsWith('/')) {
-          imageUrl = `${baseUrl}${productImage}`;
+        let imageUrl = productImage || '';
+        if (productImage && !productImage.startsWith('http')) {
+          if (productImage.startsWith('/')) {
+            imageUrl = `${baseUrl}${productImage}`;
+          }
         }
-      }
 
-      return {
-        title: `${productName} | 과실당`,
-        description: `${productName} - ${productPrice.toLocaleString()}원 | 과실당에서 구매하세요`,
-        alternates: {
-          canonical: productUrl,
-        },
-        openGraph: {
-          title: productName,
-          description: `${productPrice.toLocaleString()}원`,
-          type: 'website',
-          url: productUrl,
-          images: productImage ? [
-            {
-              url: imageUrl,
-              width: 1200,
-              height: 630,
-              alt: productName,
-            }
-          ] : [],
-        },
-        twitter: {
-          card: 'summary_large_image',
-          title: productName,
-          description: `${productPrice.toLocaleString()}원`,
-          images: productImage ? [imageUrl] : [],
-        },
-        other: {
-          'og:image:width': '1200',
-          'og:image:height': '630',
-          'og:image:type': 'image/jpeg',
-        },
-      };
+        return {
+          title: `${productName} | 과실당`,
+          description: `${productName} - ${productPrice.toLocaleString()}원 | 과실당에서 구매하세요`,
+          alternates: {
+            canonical: productUrl,
+          },
+          openGraph: {
+            title: productName,
+            description: `${productPrice.toLocaleString()}원`,
+            type: 'website',
+            url: productUrl,
+            images: imageUrl ? [
+              {
+                url: imageUrl,
+                width: 1200,
+                height: 630,
+                alt: productName,
+              }
+            ] : [],
+          },
+          twitter: {
+            card: 'summary_large_image',
+            title: productName,
+            description: `${productPrice.toLocaleString()}원`,
+            images: imageUrl ? [imageUrl] : [],
+          },
+          other: {
+            'og:image:width': '1200',
+            'og:image:height': '630',
+            'og:image:type': 'image/jpeg',
+          },
+        };
+      }
+    } catch (error) {
+      console.error('Error generating metadata for keyword:', error);
     }
   }
 
