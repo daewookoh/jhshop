@@ -1,24 +1,15 @@
 import { MetadataRoute } from 'next'
-import { createClient } from '@/integrations/supabase/client'
+import { supabaseServer } from '@/integrations/supabase/server'
 
 export const revalidate = 3600 // 1시간마다 재생성
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  const supabase = createClient()
+  const supabase = supabaseServer
 
   // 온라인 상품 가져오기
   const { data: onlineProducts } = await supabase
     .from('online_products')
-    .select(`
-      id,
-      updated_at,
-      start_datetime,
-      end_datetime,
-      available_quantity,
-      products (
-        name
-      )
-    `)
+    .select('id, updated_at, start_datetime, end_datetime, available_quantity')
     .order('created_at', { ascending: false })
 
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://your-domain.com'
