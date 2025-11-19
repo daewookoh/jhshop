@@ -577,7 +577,7 @@ export function BuyPageContent() {
   const calculateTotalPrice = (): number => {
     if (!onlineProduct) return 0;
     const productPrice = onlineProduct.product.price * quantity;
-    const shippingFee = (onlineProduct as any).shipping_fee || 4000; // 배송비 (기본값 4000원)
+    const shippingFee = ((onlineProduct as any).shipping_fee || 4000) * quantity; // 배송비 (기본값 4000원) * 수량
     return productPrice + shippingFee;
   };
 
@@ -743,8 +743,8 @@ export function BuyPageContent() {
 
     setIsLoading(true);
     try {
-      const shippingFee = (onlineProduct as any).shipping_fee || 4000; // 배송비 (기본값 4000원)
-      
+      const shippingFee = ((onlineProduct as any).shipping_fee || 4000) * quantity; // 배송비 (기본값 4000원) * 수량
+
       // Create online_order
       const { error: onlineOrderError } = await supabase
         .from('online_orders')
@@ -1220,9 +1220,9 @@ export function BuyPageContent() {
                               <span className="font-medium">{calculateProductPrice().toLocaleString()}원</span>
                             </div>
                             <div className="flex items-center justify-between text-sm">
-                              <span className="text-muted-foreground">배송비</span>
+                              <span className="text-muted-foreground">배송비({(((onlineProduct as any).shipping_fee || 4000)).toLocaleString()}원 x {quantity}개)</span>
                               <span className="font-medium">
-                                {((onlineProduct as any).shipping_fee || 4000).toLocaleString()}원
+                                {(((onlineProduct as any).shipping_fee || 4000) * quantity).toLocaleString()}원
                               </span>
                             </div>
                             <div className="flex items-center justify-between pt-2 border-t">
