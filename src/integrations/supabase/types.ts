@@ -251,7 +251,7 @@ export type Database = {
     }
     Enums: {
       app_role: "admin" | "manager" | "user"
-      payment_status: "입금대기" | "입금완료"
+      payment_status: "입금대기" | "입금완료" | "주문취소" | "발송완료"
     }
     CompositeTypes: {
       [_ in never]: never

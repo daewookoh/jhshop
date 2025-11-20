@@ -111,7 +111,7 @@ export function BuyPageContent() {
             product:products(*)
           )
         `)
-        .eq('mobile', user.mobile)
+        .eq('orderer_mobile', user.mobile)
         .order('created_at', { ascending: false });
 
       if (error) {
@@ -1320,12 +1320,14 @@ export function BuyPageContent() {
                                 {order.online_product.product.name}
                               </CardTitle>
                               <div className="flex items-center gap-2">
-                                <Badge 
+                                <Badge
                                   variant={
-                                    order.payment_status === '입금완료' 
-                                      ? 'default' 
+                                    order.payment_status === '입금완료'
+                                      ? 'default'
                                       : (order.payment_status as string) === '주문취소'
                                       ? 'destructive'
+                                      : (order.payment_status as string) === '발송완료'
+                                      ? 'default'
                                       : 'secondary'
                                   }
                                 >
