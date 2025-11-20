@@ -293,8 +293,10 @@ export function OnlineOrderList() {
 
   const handleExportExcel = async () => {
     try {
-      // 모든 주문을 내보내기 (필터링된 주문 사용)
-      const exportableOrders = filteredOrders;
+      // 주문취소와 발송완료를 제외한 주문만 내보내기
+      const exportableOrders = filteredOrders.filter(
+        order => order.payment_status !== '주문취소' && order.payment_status !== '발송완료'
+      );
 
       if (exportableOrders.length === 0) {
         toast.error('엑셀로 내보낼 주문이 없습니다.');
