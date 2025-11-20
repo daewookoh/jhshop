@@ -264,14 +264,11 @@ export function OnlineOrderList() {
 
   const handleExportExcel = async () => {
     try {
-      // 판매 종료 + 입금완료인 주문만 필터링
-      const exportableOrders = filteredOrders.filter(order => {
-        const saleStatus = getSaleStatus(order);
-        return saleStatus.label === '판매종료' && order.payment_status === '입금완료';
-      });
+      // 모든 주문을 내보내기 (필터링된 주문 사용)
+      const exportableOrders = filteredOrders;
 
       if (exportableOrders.length === 0) {
-        toast.error('엑셀로 내보낼 주문이 없습니다. (판매종료 + 입금완료 주문만 가능)');
+        toast.error('엑셀로 내보낼 주문이 없습니다.');
         return;
       }
 
@@ -280,14 +277,17 @@ export function OnlineOrderList() {
 
       // 엑셀 데이터 준비
       const excelData = exportableOrders.map((order) => {
-        const fullAddress = order.postcode 
+        const fullAddress = order.postcode
           ? `[${order.postcode}] ${order.address}${order.address_detail ? ` ${order.address_detail}` : ''}`
           : `${order.address}${order.address_detail ? ` ${order.address_detail}` : ''}`;
+
+        const saleStatus = getSaleStatus(order);
 
         return {
           '주문ID': order.id,
           '온라인상품ID': order.online_product_id,
           '상품명': order.online_product.product.name,
+          '판매상태': saleStatus.label,
           '수량': order.quantity,
           '단가': order.online_product.product.price,
           '총 가격': order.total_price,
@@ -309,6 +309,7 @@ export function OnlineOrderList() {
         { wch: 8 },  // 주문ID
         { wch: 12 }, // 온라인상품ID
         { wch: 20 }, // 상품명
+        { wch: 10 }, // 판매상태
         { wch: 8 },  // 수량
         { wch: 12 }, // 단가
         { wch: 12 }, // 총 가격
