@@ -102,6 +102,11 @@ export function BuyPageContent() {
 
     setLoadingOrders(true);
     try {
+      console.log('🔍 [주문조회 쿼리 시작]');
+      console.log('📱 조회할 휴대폰 번호:', user.mobile);
+      console.log('🔎 쿼리 조건: orderer_mobile =', user.mobile);
+      console.log('📊 테이블: online_orders');
+
       const { data, error } = await supabase
         .from('online_orders')
         .select(`
@@ -115,9 +120,14 @@ export function BuyPageContent() {
         .order('created_at', { ascending: false });
 
       if (error) {
-        console.error('Error loading online orders:', error);
+        console.error('❌ [주문조회 에러]:', error);
+        console.error('에러 상세:', JSON.stringify(error, null, 2));
         return;
       }
+
+      console.log('✅ [주문조회 성공]');
+      console.log('📦 조회된 주문 개수:', data?.length || 0);
+      console.log('📋 조회 결과:', data);
 
       // Transform the data
       const transformed = (data || []).map((item: any) => ({
@@ -128,9 +138,10 @@ export function BuyPageContent() {
         } as OnlineProduct,
       }));
 
+      console.log('✨ [데이터 변환 완료]');
       setOnlineOrders(transformed);
     } catch (error) {
-      console.error('Error loading online orders:', error);
+      console.error('💥 [주문조회 예외 발생]:', error);
     } finally {
       setLoadingOrders(false);
     }
