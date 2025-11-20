@@ -8,11 +8,15 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Search, Package, Edit, Download } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
+import { Search, Package, Edit, Download, Calendar as CalendarIcon, X } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Product } from "@/hooks/useProducts";
 import { OnlineProduct } from "@/hooks/useOnlineProducts";
+import { format } from "date-fns";
+import { ko } from "date-fns/locale";
 
 type OnlineOrder = {
   id: number;
@@ -36,6 +40,8 @@ export function OnlineOrderList() {
   const [onlineOrders, setOnlineOrders] = useState<OnlineOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
+  const [dateFrom, setDateFrom] = useState<Date | undefined>(undefined);
+  const [dateTo, setDateTo] = useState<Date | undefined>(undefined);
   const [updatingStatus, setUpdatingStatus] = useState<number | null>(null);
   const [editingOrder, setEditingOrder] = useState<OnlineOrder | null>(null);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
@@ -215,14 +221,37 @@ export function OnlineOrderList() {
   };
 
   const filteredOrders = onlineOrders.filter(order => {
-    if (!searchQuery) return true;
-    const query = searchQuery.toLowerCase();
-    return (
-      order.orderer_name?.toLowerCase().includes(query) ||
-      order.orderer_mobile.includes(query) ||
-      order.online_product.product.name.toLowerCase().includes(query) ||
-      order.online_product_id.toString().includes(query)
-    );
+    // 검색어 필터링
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase();
+      const matchesSearch = (
+        order.orderer_name?.toLowerCase().includes(query) ||
+        order.orderer_mobile.includes(query) ||
+        order.online_product.product.name.toLowerCase().includes(query) ||
+        order.online_product_id.toString().includes(query)
+      );
+      if (!matchesSearch) return false;
+    }
+
+    // 날짜 필터링
+    if (dateFrom || dateTo) {
+      const orderDate = new Date(order.created_at);
+      orderDate.setHours(0, 0, 0, 0); // 시간 부분 제거하고 날짜만 비교
+
+      if (dateFrom) {
+        const fromDate = new Date(dateFrom);
+        fromDate.setHours(0, 0, 0, 0);
+        if (orderDate < fromDate) return false;
+      }
+
+      if (dateTo) {
+        const toDate = new Date(dateTo);
+        toDate.setHours(23, 59, 59, 999); // 해당 날짜의 마지막 시간까지 포함
+        if (orderDate > toDate) return false;
+      }
+    }
+
+    return true;
   });
 
   const formatDateTime = (dateString: string) => {
@@ -355,8 +384,8 @@ export function OnlineOrderList() {
 
   return (
     <div className="space-y-6">
-      {/* Search */}
-      <div className="flex gap-2">
+      {/* Search and Filters */}
+      <div className="flex flex-col sm:flex-row gap-2">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
@@ -366,6 +395,64 @@ export function OnlineOrderList() {
             className="pl-10"
           />
         </div>
+
+        {/* Date Range Picker */}
+        <div className="flex gap-2">
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button
+                variant="outline"
+                className={`justify-start text-left font-normal ${!dateFrom && "text-muted-foreground"}`}
+              >
+                <CalendarIcon className="mr-2 h-4 w-4" />
+                {dateFrom ? format(dateFrom, "yyyy-MM-dd", { locale: ko }) : "시작일"}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-auto p-0" align="start">
+              <Calendar
+                mode="single"
+                selected={dateFrom}
+                onSelect={setDateFrom}
+                locale={ko}
+              />
+            </PopoverContent>
+          </Popover>
+
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button
+                variant="outline"
+                className={`justify-start text-left font-normal ${!dateTo && "text-muted-foreground"}`}
+              >
+                <CalendarIcon className="mr-2 h-4 w-4" />
+                {dateTo ? format(dateTo, "yyyy-MM-dd", { locale: ko }) : "종료일"}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-auto p-0" align="start">
+              <Calendar
+                mode="single"
+                selected={dateTo}
+                onSelect={setDateTo}
+                locale={ko}
+              />
+            </PopoverContent>
+          </Popover>
+
+          {(dateFrom || dateTo) && (
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => {
+                setDateFrom(undefined);
+                setDateTo(undefined);
+              }}
+              title="날짜 필터 초기화"
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          )}
+        </div>
+
         <Button
           variant="outline"
           onClick={handleExportExcel}
