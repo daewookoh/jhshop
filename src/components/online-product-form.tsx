@@ -164,7 +164,7 @@ export function OnlineProductForm({ onlineProduct, products, onSave, onCancel, o
                       {filteredProducts.map((product) => (
                         <CommandItem
                           key={product.id}
-                          value={product.id}
+                          value={product.name}
                           onSelect={() => {
                             setSelectedProduct(product);
                             setProductSearchOpen(false);
