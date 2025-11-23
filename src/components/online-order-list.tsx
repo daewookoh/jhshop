@@ -36,12 +36,27 @@ type OnlineOrder = {
   orderer_name?: string | null;
 };
 
+// 어제 날짜 계산
+const getYesterday = (): Date => {
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  yesterday.setHours(0, 0, 0, 0);
+  return yesterday;
+};
+
+// 오늘 날짜 계산
+const getToday = (): Date => {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return today;
+};
+
 export function OnlineOrderList() {
   const [onlineOrders, setOnlineOrders] = useState<OnlineOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
-  const [dateFrom, setDateFrom] = useState<Date | undefined>(undefined);
-  const [dateTo, setDateTo] = useState<Date | undefined>(undefined);
+  const [dateFrom, setDateFrom] = useState<Date | undefined>(getYesterday());
+  const [dateTo, setDateTo] = useState<Date | undefined>(getToday());
   const [updatingStatus, setUpdatingStatus] = useState<number | null>(null);
   const [editingOrder, setEditingOrder] = useState<OnlineOrder | null>(null);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
