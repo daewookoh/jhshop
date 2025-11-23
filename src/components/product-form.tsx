@@ -43,15 +43,75 @@ export function ProductForm({ product, onSave, onCancel, onDelete }: ProductForm
     product?.sale_date !== "상시" ? product?.sale_date || getTodayYYMMDD() : getTodayYYMMDD()
   );
 
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const resizeImage = (file: File, maxSize: number): Promise<{ dataUrl: string; blob: Blob }> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+          let { width, height } = img;
+
+          // 이미지가 maxSize보다 큰 경우 비율을 유지하며 리사이즈
+          if (width > maxSize || height > maxSize) {
+            if (width > height) {
+              height = Math.round((height * maxSize) / width);
+              width = maxSize;
+            } else {
+              width = Math.round((width * maxSize) / height);
+              height = maxSize;
+            }
+          }
+
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+
+          const ctx = canvas.getContext('2d');
+          if (!ctx) {
+            reject(new Error('Canvas context not available'));
+            return;
+          }
+
+          ctx.drawImage(img, 0, 0, width, height);
+
+          const dataUrl = canvas.toDataURL(file.type || 'image/jpeg', 0.9);
+
+          canvas.toBlob(
+            (blob) => {
+              if (blob) {
+                resolve({ dataUrl, blob });
+              } else {
+                reject(new Error('Failed to create blob'));
+              }
+            },
+            file.type || 'image/jpeg',
+            0.9
+          );
+        };
+        img.onerror = () => reject(new Error('Failed to load image'));
+        img.src = e.target?.result as string;
+      };
+      reader.onerror = () => reject(new Error('Failed to read file'));
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      setImageFile(file);
-      const reader = new FileReader();
-      reader.onload = () => {
-        setImagePreview(reader.result as string);
-      };
-      reader.readAsDataURL(file);
+      try {
+        const MAX_SIZE = 600;
+        const { dataUrl, blob } = await resizeImage(file, MAX_SIZE);
+
+        // 리사이즈된 Blob으로 새 File 생성
+        const resizedFile = new File([blob], file.name, { type: file.type || 'image/jpeg' });
+
+        setImageFile(resizedFile);
+        setImagePreview(dataUrl);
+      } catch (error) {
+        console.error('이미지 리사이즈 실패:', error);
+        toast.error('이미지 처리 중 오류가 발생했습니다.');
+      }
     }
   };
 
