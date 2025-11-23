@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from "react";
+import Image from "next/image";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -134,12 +135,14 @@ export function OnlineProductList({ onlineProducts, onEditProduct, canEdit, canD
                 return (
                   <tr key={onlineProduct.id} className={`border-t hover:bg-muted/50 transition-colors ${index % 2 === 0 ? 'bg-background' : 'bg-muted/20'}`}>
                     <td className="p-4">
-                      <div className="w-16 h-16 bg-muted rounded-lg flex items-center justify-center overflow-hidden">
+                      <div className="w-16 h-16 bg-muted rounded-lg flex items-center justify-center overflow-hidden relative">
                         {onlineProduct.product.image_url ? (
-                          <img
+                          <Image
                             src={onlineProduct.product.image_url}
                             alt={onlineProduct.product.name}
-                            className="w-full h-full object-cover"
+                            fill
+                            sizes="64px"
+                            className="object-cover"
                           />
                         ) : (
                           <ImageIcon className="h-8 w-8 text-muted-foreground" />
@@ -215,12 +218,14 @@ export function OnlineProductList({ onlineProducts, onEditProduct, canEdit, canD
             <Card key={onlineProduct.id} className="bg-card shadow-soft">
               <CardContent className="p-4">
                 <div className="flex items-start gap-3">
-                  <div className="w-12 h-12 bg-muted rounded-lg flex items-center justify-center overflow-hidden flex-shrink-0">
+                  <div className="w-12 h-12 bg-muted rounded-lg flex items-center justify-center overflow-hidden flex-shrink-0 relative">
                     {onlineProduct.product.image_url ? (
-                      <img
+                      <Image
                         src={onlineProduct.product.image_url}
                         alt={onlineProduct.product.name}
-                        className="w-full h-full object-cover"
+                        fill
+                        sizes="48px"
+                        className="object-cover"
                       />
                     ) : (
                       <ImageIcon className="h-6 w-6 text-muted-foreground" />

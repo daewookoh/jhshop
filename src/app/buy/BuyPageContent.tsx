@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef, Suspense } from "react";
+import Image from "next/image";
 import { useSearchParams } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -1032,11 +1033,13 @@ export function BuyPageContent() {
                               >
                                 <div className="relative">
                                   {product.product.image_url ? (
-                                    <div className="aspect-square w-full overflow-hidden rounded-t-lg">
-                                      <img
+                                    <div className="aspect-square w-full overflow-hidden rounded-t-lg relative">
+                                      <Image
                                         src={product.product.image_url}
                                         alt={cleanProductName(product.product.name)}
-                                        className="w-full h-full object-cover"
+                                        fill
+                                        sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+                                        className="object-cover"
                                       />
                                     </div>
                                   ) : (
@@ -1100,11 +1103,14 @@ export function BuyPageContent() {
                         {/* Left: Product Image and Description */}
                         <div className="w-full md:w-1/2 flex-shrink-0 space-y-4">
                           {onlineProduct.product.image_url && (
-                            <div className="aspect-square max-w-md mx-auto md:mx-0">
-                              <img
+                            <div className="aspect-square max-w-md mx-auto md:mx-0 relative">
+                              <Image
                                 src={onlineProduct.product.image_url}
                                 alt={onlineProduct.product.name}
-                                className="w-full h-full object-cover rounded-lg"
+                                fill
+                                sizes="(max-width: 768px) 100vw, 448px"
+                                className="object-cover rounded-lg"
+                                priority
                               />
                             </div>
                           )}
@@ -1547,11 +1553,13 @@ export function BuyPageContent() {
                         >
                           <div className="relative">
                             {product.product.image_url ? (
-                              <div className="aspect-square w-full overflow-hidden rounded-t-lg">
-                                <img
+                              <div className="aspect-square w-full overflow-hidden rounded-t-lg relative">
+                                <Image
                                   src={product.product.image_url}
                                   alt={cleanProductName(product.product.name)}
-                                  className="w-full h-full object-cover"
+                                  fill
+                                  sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+                                  className="object-cover"
                                 />
                               </div>
                             ) : (
