@@ -1,6 +1,13 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   images: {
+    // 1. 캐시 최대 수명: 31일 (이미지가 자주 변경되지 않으면 변환 및 캐시 쓰기 감소)
+    minimumCacheTTL: 2678400,
+
+    // 2. 포맷: webp만 사용 (avif 제거로 변환 횟수 감소)
+    formats: ['image/webp'],
+
+    // 3. 리모트 패턴: 허용된 도메인만 최적화
     remotePatterns: [
       {
         protocol: 'https',
@@ -11,6 +18,15 @@ const nextConfig = {
         hostname: 'localhost',
       },
     ],
+
+    // 4. 품질 허용 목록: 가능한 변환 수 감소 (낮은 품질 = 작은 파일)
+    qualities: [50, 75],
+
+    // 5. 디바이스 사이즈: 모바일, 데스크탑 2개로 제한
+    deviceSizes: [750, 1080],
+
+    // 6. 이미지 사이즈: 썸네일용 2개로 제한
+    imageSizes: [64, 128],
   },
   outputFileTracingRoot: __dirname,
   // Suppress warnings about missing pages during build
