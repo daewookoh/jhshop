@@ -49,7 +49,7 @@
     "googleapis": "^160.0.0",
     "input-otp": "^1.4.2",
     "lucide-react": "^0.462.0",
-    "next": "^15.0.0",
+    "next": "^16.1.6",
     "next-themes": "^0.3.0",
     "nodemailer": "^7.0.10",
     "openai": "^5.20.3",
