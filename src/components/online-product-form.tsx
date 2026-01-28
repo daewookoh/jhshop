@@ -52,7 +52,7 @@ export function OnlineProductForm({ onlineProduct, products, onSave, onCancel, o
     onlineProduct?.available_quantity?.toString() || "0"
   );
   const [shippingFee, setShippingFee] = useState(
-    (onlineProduct as any)?.shipping_fee?.toString() || "4000"
+    (onlineProduct as any)?.shipping_fee?.toString() ?? "4000"
   );
   const [productSearchOpen, setProductSearchOpen] = useState(false);
   const [productSearchQuery, setProductSearchQuery] = useState("");

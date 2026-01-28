@@ -160,7 +160,7 @@ export function OnlineProductList({ onlineProducts, onEditProduct, canEdit, canD
                           {onlineProduct.product.price.toLocaleString()}원
                         </span>
                         <span className="text-xs text-muted-foreground mt-1">
-                          배송비 {((onlineProduct as any).shipping_fee || 4000).toLocaleString()}원
+                          배송비 {((onlineProduct as any).shipping_fee ?? 4000).toLocaleString()}원
                         </span>
                       </div>
                     </td>
@@ -242,7 +242,7 @@ export function OnlineProductList({ onlineProducts, onEditProduct, canEdit, canD
                             {onlineProduct.product.price.toLocaleString()}원
                           </p>
                           <p className="text-xs text-muted-foreground">
-                            배송비 {((onlineProduct as any).shipping_fee || 4000).toLocaleString()}원
+                            배송비 {((onlineProduct as any).shipping_fee ?? 4000).toLocaleString()}원
                           </p>
                         </div>
                         <div className="text-xs text-muted-foreground mt-1">
