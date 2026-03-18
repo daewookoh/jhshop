@@ -180,7 +180,7 @@ export function OrderUpload() {
         const [, nickname, time, orderText] = match;
         const trimmedNickname = nickname.trim();
         
-        if (trimmedNickname.includes('과실당') || !orderText?.trim()) {
+        if (trimmedNickname === '과실당' || !orderText?.trim()) {
           continue;
         }
         
